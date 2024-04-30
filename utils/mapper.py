@@ -163,14 +163,14 @@ class Mapper():
         if self.config.from_sample_points:
             if self.config.from_all_samples:
                 update_points = coord
-            else:
+            else: #default
                 update_points = coord[torch.abs(sdf_label) < self.config.surface_sample_range_m * self.config.map_surface_ratio, :]
                 update_points = transform_torch(update_points, cur_pose_torch) 
         else:   
             update_points = transform_torch(frame_point_torch, cur_pose_torch) 
 
         # prune map and recreate hash
-        if self.config.prune_map_on:
+        if self.config.prune_map_on: #default off
             if self.neural_points.prune_map(self.config.max_prune_certainty):
                 self.neural_points.recreate_hash(None, None, True, True, frame_id)
         self.neural_points.update(update_points, frame_origin_torch, frame_orientation_torch, frame_id)
@@ -213,19 +213,20 @@ class Mapper():
         elif self.dataset.gt_pose_provided: # for pure reconstruction with known pose
             self.used_poses = torch.tensor(np.array(self.dataset.gt_poses), device=self.device, dtype=torch.float64)
         
+        # !!! ba slow
         if self.ba_done_flag: # bundle adjustment is not done
-            # this may also cause some memory issue when the data pool is too large (5e7) # FIXME
+            # this may also cause some memory issue when the data pool is too large (5e7) # FIXME 
             self.global_coord_pool = transform_batch_torch(self.coord_pool, self.used_poses[self.time_pool]) # very slow here [if ba is not done, then you don't need to transform the whole data pool]
             self.ba_done_flag = False
 
-        else: # used when ba is not enabled
+        else: # used when ba is not enabled 
             global_coord = transform_torch(coord, cur_pose_torch) 
             self.global_coord_pool = torch.cat((self.global_coord_pool, global_coord), 0)   
             # why so slow  
             
         T3_1 = get_time()
         
-        if (frame_id+1) % self.config.pool_filter_freq == 0:
+        if (frame_id+1) % self.config.pool_filter_freq == 0: # only frames in certain frequency
             pool_relatve = self.global_coord_pool - frame_origin_torch
             # print(pool_relatve.shape)
             pool_relative_dist = torch.sum(pool_relatve**2, dim=-1)
@@ -270,7 +271,7 @@ class Mapper():
 
         T3_2 = get_time()
 
-        if self.config.bs_new_sample > 0: # learn more in the region that is newly observed
+        if self.config.bs_new_sample > 0: # default on: learn more in the region that is newly observed
 
             cur_sample_filtered = self.global_coord_pool[-self.cur_sample_count:] # newly added samples
             cur_sample_filtered_count = cur_sample_filtered.shape[0]
@@ -312,12 +313,12 @@ class Mapper():
 
         T4 = get_time()
 
-        # print("time for dynamic filtering     (ms):", (T1-T0)*1e3)
-        # print("time for sampling              (ms):", (T2-T1)*1e3)
-        # print("time for map updating          (ms):", (T3-T2)*1e3)
-        # print("time for pool updating         (ms):", (T4-T3)*1e3) # mainly spent here
-        # print("time for pool transforming     (ms):", (T3_1-T3_0)*1e3) # mainly spent here
-        # print("time for filtering             (ms):", (T3_2-T3_1)*1e3)
+        print("time for dynamic filtering     (ms):", (T1-T0)*1e3)
+        print("time for sampling              (ms):", (T2-T1)*1e3)
+        print("time for map updating          (ms):", (T3-T2)*1e3)
+        print("time for pool updating         (ms):", (T4-T3)*1e3) # mainly spent here
+        print("time for pool transforming     (ms):", (T3_1-T3_0)*1e3) # mainly spent here
+        print("time for filtering             (ms):", (T3_2-T3_1)*1e3)
 
     def get_batch(self, global_coord = False):
 
@@ -426,8 +427,8 @@ class Mapper():
         if self.train_less:
             iter_count = max(1, iter_count-5)
 
-        neural_point_feat = list(self.neural_points.parameters())
-        geo_mlp_param = list(self.geo_mlp.parameters())
+        neural_point_feat = list(self.neural_points.parameters()) # geo_features
+        geo_mlp_param = list(self.geo_mlp.parameters()) # decoder trainable params
         if self.config.semantic_on:
             sem_mlp_param = list(self.sem_mlp.parameters())
         else: 
@@ -454,7 +455,7 @@ class Mapper():
             if self.ba_done_flag:
                 coord = transform_batch_torch(coord, poses) # transformed to global frame
 
-            if self.require_gradient:
+            if self.require_gradient: #default false
                 coord.requires_grad_(True)
 
             geo_feature, color_feature, weight_knn, _, certainty = self.neural_points.query_feature(coord, ts, query_color_feature=self.config.color_on)
@@ -479,7 +480,7 @@ class Mapper():
 
             if self.require_gradient:
                 g = get_gradient(coord, sdf_pred) # to unit m  
-            elif self.config.numerical_grad: # do not use this for the tracking, still analytical grad for tracking   
+            elif self.config.numerical_grad: # use for mapping # do not use this for the tracking, still analytical grad for tracking   
                 g = self.get_numerical_gradient(coord[::self.config.gradient_decimation], 
                                                 sdf_pred[::self.config.gradient_decimation],
                                                 self.config.voxel_size_m*self.config.num_grad_step_ratio) #  
@@ -575,7 +576,7 @@ class Mapper():
 
             self.total_iter += 1
 
-            # in ms
+            # # in ms
             # print("time for get data        :", (T01-T00) * 1e3) # \
             # print("time for feature querying:", (T02-T01) * 1e3) # \\\\\\\
             # print("time for sdf prediction  :", (T03-T02) * 1e3) # \\\\\\

@@ -234,7 +234,7 @@ def run_pin_slam():
         if not mapper.lose_track and not dataset.stop_status:
             mapper.process_frame(dataset.cur_point_cloud_torch, dataset.cur_sem_labels_torch,
                                  dataset.cur_pose_torch, used_frame_id, (config.dynamic_filter_on and used_frame_id > 0))
-        else: # lose track, still need to set back the local map
+        else: # lose track, still need to set back the local map (normally won't get in, the reset_local_map step is contained in process_frame())
             neural_points.reset_local_map(dataset.cur_pose_torch[:3,3], None, used_frame_id)
             mapper.static_mask = None
                                 
@@ -247,6 +247,7 @@ def run_pin_slam():
         if used_frame_id == config.freeze_after_frame: # freeze the decoder after certain frame 
             freeze_decoders(geo_mlp, sem_mlp, color_mlp, config)
 
+        # default off
         # conduct local bundle adjustment (with lower frequency)
         if config.track_on and config.ba_freq_frame > 0 and (used_frame_id+1) % config.ba_freq_frame == 0:
             mapper.bundle_adjustment(config.iters*4, config.ba_frame)

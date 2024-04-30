@@ -32,7 +32,7 @@ class Decoder(nn.Module):
             position_dim = config.pos_input_dim * (2 * config.pos_encoding_band + 1)
             
         feature_dim = config.feature_dim
-        input_layer_count = feature_dim + position_dim
+        input_layer_count = feature_dim + position_dim # 8+3
         
         if is_time_conditioned:
             input_layer_count += 1
@@ -64,6 +64,7 @@ class Decoder(nn.Module):
     # predict the sdf (opposite sign to the actual sdf)
     # unit is already m
     def sdf(self, features):
+        
         for k, l in enumerate(self.layers):
             if k == 0:
                 if self.use_leaky_relu:

@@ -63,7 +63,7 @@ def setup_experiment(config: Config, argv = None, debug_mode: bool = False):
         if config.wandb_vis_on:
             # set up wandb
             setup_wandb()
-            wandb.init(project="PIN_SLAM", config=vars(config), dir=run_path) # your own worksapce
+            wandb.init(project="pin-slam", config=vars(config), dir=run_path) # your own worksapce
             wandb.run.name = run_name         
 
         # config file and reproducable shell script
@@ -565,6 +565,11 @@ def deskewing(points: torch.tensor, ts: torch.tensor, pose: torch.tensor, ts_mid
     points_deskewd[:,:3] = (rotmat_slerp @ points[:,:3].unsqueeze(-1)).squeeze(-1) + tran_lerp
 
     return points_deskewd
+
+def deskewing_IMU(points: torch.tensor, ts: torch.tensor, pose: torch.tensor, ts_mid_pose = 0.5):
+    ts = ts.squeeze(-1)
+    
+
 
 # this is not generally the case
 # get point-wise ts (from 0 to 1), for Ouster laser scanner

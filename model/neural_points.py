@@ -88,7 +88,7 @@ class NeuralPoints(nn.Module):
         self.local_neural_points = torch.empty((0, 3), dtype=self.dtype, device=self.device)
         self.local_point_orientations = torch.empty((0, 4), dtype=self.dtype, device=self.device) # as quaternion
         self.local_geo_features = nn.Parameter() 
-        self.local_color_features = nn.Parameter() 
+        self.local_color_features = nn.Parameter() # learnable parameters, will be optimized during training. 
         self.local_point_certainties = torch.empty((0), dtype=self.dtype, device=self.device)
         self.local_point_ts_update = torch.empty((0), device=self.device, dtype=torch.long)
         self.local_mask = None
@@ -236,7 +236,7 @@ class NeuralPoints(nn.Module):
         else:
             update_mask = torch.ones(hash_idx.shape, dtype=torch.bool, device=self.device)
 
-        added_pt = sample_points[update_mask] 
+        added_pt = sample_points[update_mask] # num of points in filtered new frame
         new_point_count = added_pt.shape[0]
 
         cur_pt_idx = self.buffer_pt_index[hash]
@@ -575,7 +575,7 @@ class NeuralPoints(nn.Module):
 
         if query_geo_feature:
             geo_features = torch.zeros(batch_size, nn_k, self.geo_feature_dim, device=self.device, dtype=self.dtype) # [N, K, F] 
-            if query_locally:
+            if query_locally: #default here
                 geo_features[valid_mask] = self.local_geo_features[idx[valid_mask]]
             else:
                 geo_features[valid_mask] = self.geo_features[idx[valid_mask]]

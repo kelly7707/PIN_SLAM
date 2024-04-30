@@ -49,7 +49,7 @@ class Config:
         self.correction_deg: float = 0.0
 
         # motion undistortion
-        self.deskew: bool = False
+        self.deskew: bool = True #False
         self.valid_ts_in_points: bool = True
         self.lidar_type_guess: str = "velodyne"
 
@@ -247,7 +247,7 @@ class Config:
         self.adam_eps: float = 1e-15
 
         # loop closure detection
-        self.global_loop_on: bool = True # global loop detection using context
+        self.global_loop_on: bool = False #True # global loop detection using context
         self.local_map_context: bool = False # use local map or scan context for loop closure description
         self.loop_with_feature: bool = False # encode neural point feature in the context
         self.min_loop_travel_dist_ratio: float = 4.0 # accumulated travel distance should be larger than theis ratio * local map radius to be considered as an valid candidate
@@ -365,7 +365,7 @@ class Config:
             if self.kitti_correction_on:
                 self.correction_deg = config_args["setting"].get("correct_deg", self.correction_deg)
 
-            self.deskew = config_args["setting"].get("deskew", False) # apply motion undistortion or not
+            self.deskew = config_args["setting"].get("deskew", True) #False) # apply motion undistortion or not
             self.valid_ts_in_points = config_args["setting"].get("valid_ts", True)
 
         # process
