@@ -187,6 +187,10 @@ class SLAMDataset(Dataset):
         self.ts_pc = loadTimestamps(self.config.pc_path)
         self.ts_rawimu = loadTimestamps(self.config.raw_imu_path)
 
+        # testing IMU
+        self.vidual_poses = []
+        self.vidual_gtposes = []
+
     def read_frame_ros(self, msg, ts_field_name = "time", ts_col=3):
 
         # ros related
@@ -419,8 +423,11 @@ class SLAMDataset(Dataset):
             self.travel_dist.append(0.)
             self.last_pose_ref = self.cur_pose_ref
             # TODO: IMU
-            # init_imu_integrator['pos'] = torch.zeros(3) #wrong. + lidar to imu
-            # init_imu_integrator['rot'] = pp.identity_SO3()
+            init_imu_integrator['pos'] = torch.zeros(3) #wrong. + lidar to imu
+            init_imu_integrator['rot'] = pp.identity_SO3()
+            self.last_imu_integrator_pos = init_imu_integrator['pos']
+            self.last_imu_integrator_rot = init_imu_integrator['rot']
+
             init_imu_integrator['vel'] = torch.zeros(3)
             self.last_imu_integrator_vel = init_imu_integrator['vel']
 
@@ -440,10 +447,14 @@ class SLAMDataset(Dataset):
             # #IMU--2 pose initial guess
             # # TODO: transform to imu frame; pyposeSO3 (self.last_pose_ref)
             last_pose_in_imu = np.linalg.inv(self.T_pose_to_velo) @ self.last_pose_ref # @ self.T_pose_to_velo # TODO: order?
-            init_imu_integrator['pos'] = torch.tensor(last_pose_in_imu[:3,3], dtype=self.dtype)
-            init_imu_integrator['rot'] = pp.mat2SO3(torch.tensor(last_pose_in_imu[:3,:3], dtype=self.dtype))
+            # init_imu_integrator['pos'] = torch.tensor(last_pose_in_imu[:3,3], dtype=self.dtype)
+            # init_imu_integrator['rot'] = pp.mat2SO3(torch.tensor(last_pose_in_imu[:3,:3], dtype=self.dtype))
             
             init_imu_integrator['vel'] = self.last_imu_integrator_vel
+
+            init_imu_integrator['pos'] = self.last_imu_integrator_pos
+            init_imu_integrator['rot'] = self.last_imu_integrator_rot
+
             integrator = pp.module.IMUPreintegrator(init_imu_integrator['pos'], init_imu_integrator['rot'], init_imu_integrator['vel'],
                                                 reset=False).to(self.device)
             # print('--------------------',self.imu_curinter['dt'].shape)
@@ -453,16 +464,16 @@ class SLAMDataset(Dataset):
             state = integrator(dt=self.imu_curinter['dt'].to(self.device) , gyro=self.imu_curinter['gyro'].to(self.device),
                                acc=self.imu_curinter['acc'].to(self.device)) #, TODO: rot=data['init_rot']) init_rot gt_rot?
             # # # state = integrator(ang,acc,dt)
-            pos_imu_preinte = state['pos'][-1,:] # [1,n,3]
+            pos_imu_preinte = state['pos'][-1,:] # [1,n,3] or squeeze
             rot_imu_preinte = state['rot'][-1,:]
             vel_imu_preinte = state['vel'][-1,:]
-            self.last_imu_integrator_vel = vel_imu_preinte
+            self.last_imu_integrator_vel = vel_imu_preinte[-1,:] # last item
             # # self.imu_preinte_tran = np.eye(4)
             # # TODO transform to lidar coord; S03; initial guess
             # # cur_pose_init_guess = self.last_pose_ref @ self.imu_preinte_tran
             # Convert tensors back 
-            pos_imu_preinte_np = pos_imu_preinte[-1,:].numpy() #last output
-            rot_imu_preinte_np = rot_imu_preinte[-1,:].matrix().numpy()
+            pos_imu_preinte_np = pos_imu_preinte[-1,:].cpu().numpy() #last output
+            rot_imu_preinte_np = rot_imu_preinte[-1,:].matrix().cpu().numpy()
 
             cur_preinte_inimu = np.eye(4) 
             cur_preinte_inimu[:3,3] = pos_imu_preinte_np
@@ -470,8 +481,32 @@ class SLAMDataset(Dataset):
 
             cur_pose_init_guess = self.T_pose_to_velo @ cur_preinte_inimu # in lidar frame, local
             
+            # --- testing: IMU preinte vidual
+            self.last_imu_integrator_pos = pos_imu_preinte[-1,:]
+            self.last_imu_integrator_rot = rot_imu_preinte[-1,:]
+
+            plt.figure(figsize=(5, 5))
             
-            # pose initial guess tensor
+            ax = plt.axes(projection='3d')
+            poses = state['pos'][-1,...].cpu().numpy()
+            poses_gt = self.imu_curinter['gt_pos'].cpu().numpy()
+
+            self.vidual_poses.append(poses)
+            self.vidual_gtposes.append(poses_gt)
+            visual_poses_np = np.concatenate(self.vidual_poses, axis=0)
+            visual_gtposes_np = np.concatenate(self.vidual_gtposes, axis=0)
+
+            ax.plot3D(visual_poses_np[:,0], visual_poses_np[:,1], visual_poses_np[:,2], 'b')
+            ax.plot3D(visual_gtposes_np[:,0], visual_gtposes_np[:,1], visual_gtposes_np[:,2], 'r')
+
+            plt.title("PyPose IMU Integrator")
+            plt.legend(["PyPose", "Ground Truth"])
+            figure = os.path.join(f'IMU preintegration_{frame_id}'+'.png')
+            plt.savefig(figure)
+            print("Saved to", figure)
+
+
+            # --- pose initial guess tensor
             self.cur_pose_guess_torch = torch.tensor(cur_pose_init_guess, dtype=torch.float64, device=self.device)   
             cur_source_torch = self.cur_point_cloud_torch.clone() # used for registration
             
