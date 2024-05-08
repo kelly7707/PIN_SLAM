@@ -1,0 +1,21 @@
+setting:
+  name: "sanity_test"
+  output_root: "./experiments"
+  
+  pc_path: "./data/kitti_360/2013_05_28_drive_0000/velodyne_points"
+  sync_imu_path: "./data/kitti_360/2013_05_28_drive_0000/data_poses/oxts_sync"
+  raw_imu_path: "./data/kitti_360/2013_05_28_drive_0000/data_poses/oxts_raw"
+  calib360_path: "./data/kitti_360/2013_05_28_drive_0000/calibration"
+  end_frame: 100
+  
+  gpu_id: "1" # cuda 0
+process:
+  max_range_m: 60.0
+tracker:
+  iter_n: 20
+eval:
+  o3d_vis_on: False #True # visualize the mapping or not
+  silence_log: False #True # output the logs or not
+  sensor_cad_path: ./cad/kitti_car.ply
+  save_map: True
+  save_mesh: True

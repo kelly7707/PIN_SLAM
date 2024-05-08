@@ -24,7 +24,7 @@ class Decoder(nn.Module):
         self.use_leaky_relu = False
 
         self.num_bands = config.pos_encoding_band
-        self.dimensionality = config.pos_input_dim
+        self.dimensionality = config.pos_input_dim # 3
 
         if config.use_gaussian_pe:
             position_dim = config.pos_input_dim + 2 * config.pos_encoding_band
@@ -42,11 +42,11 @@ class Decoder(nn.Module):
         layers = []
         for i in range(hidden_level):
             if i == 0:
-                layers.append(nn.Linear(input_layer_count, hidden_dim, bias_on))
+                layers.append(nn.Linear(input_layer_count, hidden_dim, bias_on)) # 11, 64
             else:
                 layers.append(nn.Linear(hidden_dim, hidden_dim, bias_on))
-        self.layers = nn.ModuleList(layers)
-        self.lout = nn.Linear(hidden_dim, out_dim, bias_on)
+        self.layers = nn.ModuleList(layers) # hidden_level = 1
+        self.lout = nn.Linear(hidden_dim, out_dim, bias_on) # 64, 1
 
         if config.main_loss_type == 'bce':
             self.sdf_scale = config.logistic_gaussian_ratio*config.sigma_sigmoid_m

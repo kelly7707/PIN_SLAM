@@ -19,6 +19,9 @@ class Config:
 
         self.output_root: str = ""  # output root folder
         self.pc_path: str = ""  # input point cloud folder
+        self.sync_imu_path: str = ""
+        self.raw_imu_path: str = ""
+        self.calib360_path: str = "" 
         self.pose_path: str = ""  # input pose file
         self.calib_path: str = ""  # input calib file (to sensor frame)
 
@@ -333,8 +336,11 @@ class Config:
             
             self.output_root = config_args["setting"].get("output_root", "./experiments")
             self.pc_path = config_args["setting"].get("pc_path", "") 
+            self.sync_imu_path = config_args["setting"].get("sync_imu_path", "")
+            self.raw_imu_path = config_args["setting"].get("raw_imu_path", "")
             self.pose_path = config_args["setting"].get("pose_path", "")
             self.calib_path = config_args["setting"].get("calib_path", "")
+            self.calib360_path = config_args["setting"].get("calib360_path", "")
 
             # optional, when semantic mapping is on [semantic]
             self.semantic_on = config_args["setting"].get("semantic_on", False) 

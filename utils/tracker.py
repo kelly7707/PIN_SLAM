@@ -112,7 +112,7 @@ class Tracker():
 
             T03 = get_time()
             
-            T = delta_T@T
+            T = delta_T@T # updating of a local initial guess transformation matrix  (apply delta_T first, then T)
 
             # the sdf residual should not increase too much during the optimization
             if (sdf_residual_cm - last_sdf_residual_cm)/last_sdf_residual_cm > max_increment_sdf_residual_ratio:

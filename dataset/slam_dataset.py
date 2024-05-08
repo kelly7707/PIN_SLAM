@@ -8,6 +8,7 @@ import sys
 import numpy as np
 from numpy.linalg import inv
 import math
+import pykitti.utils
 import torch
 from torch.utils.data import Dataset
 import contextlib
@@ -18,12 +19,17 @@ import csv
 from typing import List
 import matplotlib.cm as cm
 import wandb
+import pypose as pp
+from kitti360scripts.devkits.commons import loadCalibration
 
 from utils.config import Config
-from utils.tools import get_time, voxel_down_sample_torch, deskewing, transform_torch, plot_timing_detail, tranmat_close_to_identity
+from utils.tools import get_time, voxel_down_sample_torch, deskewing,deskewing_IMU, transform_torch, plot_timing_detail, tranmat_close_to_identity
 from utils.semantic_kitti_utils import *
 from eval.eval_traj_utils import *
 
+import pykitti
+import datetime as dt
+from scipy.spatial.transform import Rotation as R
 # TODO: write a new dataloader for RGB-D inputs, not always firstly converting them to KITTI Lidar format
 
 class SLAMDataset(Dataset):
@@ -39,13 +45,18 @@ class SLAMDataset(Dataset):
         # point cloud files
         if config.pc_path != "":
             from natsort import natsorted 
-            self.pc_filenames = natsorted(os.listdir(config.pc_path)) # sort files as 1, 2,… 9, 10 not 1, 10, 100 with natsort
+            # self.pc_filenames = natsorted(os.listdir(config.pc_path)) # sort files as 1, 2,… 9, 10 not 1, 10, 100 with natsort
+            self.pc_filenames = natsorted(os.listdir(os.path.join(config.pc_path,'data')))
             self.total_pc_count = len(self.pc_filenames)
-
+        # if config.sync_imu_path != "":
+        #     from natsort import natsorted 
+        #     self.sync_imu_filenames = natsorted(os.listdir(config.sync_imu_path)) # sort files as 1, 2,… 9, 10 not 1, 10, 100 with natsort
+        #     self.total_sync_imu_count = len(self.sync_imu_filenames)
+        
         # pose related
         self.gt_pose_provided = True
         if config.pose_path == '':
-            self.gt_pose_provided = False
+            self.gt_pose_provided = False # default
 
         self.odom_poses = None
         if config.track_on:
@@ -68,10 +79,28 @@ class SLAMDataset(Dataset):
 
         self.poses_ref = [np.eye(4)] # only used when gt_pose_provided
 
+        # calibration kitti 360
+        self.calib360 = {}
+        fileCameraToPose = os.path.join(config.calib360_path, 'calib_cam_to_pose.txt')
+        T_cam_to_pose = loadCalibration.loadCalibrationCameraToPose(fileCameraToPose) # cam to imu
+        # print('Loaded %s' % fileCameraToPose)
+        # print(T_cam_to_pose)
+
+        fileCameraToVelo = os.path.join(config.calib360_path, 'calib_cam_to_velo.txt')
+        T_cam_to_velo = loadCalibration.loadCalibrationRigid(fileCameraToVelo)
+
+        self.T_pose_to_velo = T_cam_to_pose['image_00'] @ np.linalg.inv(T_cam_to_velo)
+        # '''source 'kitti360Viewer3DRaw.py'
+        #  TrVeloToPose = TrCamToPose['image_00'] @ np.linalg.inv(TrCam0ToVelo)
+        # Tr_delta = np.linalg.inv(self.TrVeloToPose) @ Tr_pose_pose @ self.TrVeloToPose
+        # r = Rodrigues(Tr_delta[0:3,0:3])
+        # t = Tr_delta[0:3,3]
+        # TODO: unwrap points to compensate for ego motion???
+
         self.calib = {}
         self.calib['Tr'] = np.eye(4) # as default if calib file is not provided # as T_lidar<-camera
         
-        if self.gt_pose_provided:
+        if self.gt_pose_provided: # default false
             if config.calib_path != '':
                 self.calib = read_kitti_format_calib(config.calib_path)
             # TODO: this should be updated, select the pose with correct format, tum format may not endwith csv
@@ -153,6 +182,10 @@ class SLAMDataset(Dataset):
         self.cur_source_normals = None
         self.cur_source_colors = None
 
+        # ts
+        self.ts_syncimu = loadTimestamps(self.config.sync_imu_path)
+        self.ts_pc = loadTimestamps(self.config.pc_path)
+        self.ts_rawimu = loadTimestamps(self.config.raw_imu_path)
 
     def read_frame_ros(self, msg, ts_field_name = "time", ts_col=3):
 
@@ -194,27 +227,28 @@ class SLAMDataset(Dataset):
 
         if self.config.deskew:
             self.get_point_ts(point_ts)
-            
+
+           
 
     def read_frame(self, frame_id):
         
         # load gt pose if available
-        if self.gt_pose_provided:
+        if self.gt_pose_provided: # default false
             self.cur_pose_ref = self.poses_ref[frame_id]
             self.gt_poses.append(self.cur_pose_ref)
         else: # or initialize with identity
-            self.cur_pose_ref = np.eye(4)
+            self.cur_pose_ref = np.eye(4) # default
         self.cur_pose_torch = torch.tensor(self.cur_pose_ref, device=self.device, dtype=self.dtype)
 
         point_ts = None
 
         # load point cloud (support *pcd, *ply and kitti *bin format)
-        frame_filename = os.path.join(self.config.pc_path, self.pc_filenames[frame_id])
+        frame_filename = os.path.join(self.config.pc_path, 'data', self.pc_filenames[frame_id])
         if not self.silence:
             print(frame_filename)
-        if not self.config.semantic_on: 
+        if not self.config.semantic_on: # default
             point_cloud, point_ts = read_point_cloud(frame_filename, self.config.color_channel) #  [N, 3], [N, 4] or [N, 6], may contain color or intensity 
-            if self.config.color_channel > 0:
+            if self.config.color_channel > 0: # 0
                 point_cloud[:,-self.config.color_channel:]/=self.color_scale
             self.cur_sem_labels_torch = None
         else:
@@ -224,27 +258,93 @@ class SLAMDataset(Dataset):
             self.cur_sem_labels_full = torch.tensor(sem_labels, device=self.device, dtype=torch.long) # full labels (>20 classes)
         
         self.cur_point_cloud_torch = torch.tensor(point_cloud, device=self.device, dtype=self.dtype)
+        
+        if frame_id>0:
+            # IMU--1 load IMU(kitti)
+            # # sync_imu_filename = os.path.join(self.config.sync_imu_path,'data', self.sync_imu_filenames[frame_id])
+            sync_imu_filename = os.path.join(self.config.sync_imu_path, 'data', '%010d.txt'%frame_id)
+            # # sync_imu,ts = loadOxtsData(self.config.sync_imu_path)
+            # cur_sync_imu = np.loadtxt(sync_imu_filename) # imu data at current frame TODO: dt...
+            # self.cur_sync_imu_torch = torch.tensor(cur_sync_imu, device=self.device, dtype=self.dtype)
+            
+            # TODO: check ts_pc v.s. ts_syncimu
+            self.ts_cur_imu = self.ts_syncimu[frame_id-1]
+            self.ts_end_imu = self.ts_syncimu[frame_id]
+
+            # TODO: interpolate raw imu in between
+            # Find indices for current frame
+            start_index = np.searchsorted(self.ts_rawimu, self.ts_cur_imu, side='left')
+            end_index = np.searchsorted(self.ts_rawimu, self.ts_end_imu, side='left') # 'right'
+            self.read_raw_imu(start_index, end_index)
+            # frame_id * 10 
 
         if self.config.deskew:
             self.get_point_ts(point_ts)
         
         # print(self.cur_point_ts_torch)
     
+    def read_raw_imu(self, start_index, end_index):
+        '''load raw imu data & ts [start_index, end_index-1], source pypose/imu_dataset.py'''
+        # all_imu_data = []
+        all_imu_filenames =[]
+        for idx in range(start_index, end_index):# the last one not included (the start of next frame)
+            raw_imu_filename = os.path.join(self.config.raw_imu_path, 'data', f'{idx:010d}.txt')
+            all_imu_filenames.append(raw_imu_filename)
+            # cur_raw_imu = np.loadtxt(raw_imu_filename)
+            # all_imu_data.append(cur_raw_imu)
+        
+        # if all_imu_data:
+        #     imu_data_numpy = np.stack(all_imu_data)
+        #     # Convert the numpy array to a PyTorch tensor
+        #     imu_data_tensor = torch.from_numpy(imu_data_numpy)
+        # else:
+        #     # Create an empty tensor if no files were read
+        #     imu_data_tensor = torch.tensor([])
+        
+        self.oxts_raw_imu_curinterval = pykitti.utils.load_oxts_packets_and_poses(all_imu_filenames)
+        self.ts_raw_imu_curinterval = self.ts_rawimu[start_index:end_index+1] #[frame_i, frame_i+1]
+        self.seq_len = len(self.ts_raw_imu_curinterval) - 1
+
+        self.imu_curinter = {}
+        self.imu_curinter['dt'] = torch.tensor([dt.datetime.timestamp(self.ts_raw_imu_curinterval[i+1]) -
+                                dt.datetime.timestamp(self.ts_raw_imu_curinterval[i])
+                                    for i in range(self.seq_len)]).unsqueeze(1) # torch.size([n,1])
+        self.imu_curinter['gyro'] = torch.tensor([[self.oxts_raw_imu_curinterval[i].packet.wx,
+                                   self.oxts_raw_imu_curinterval[i].packet.wy,
+                                   self.oxts_raw_imu_curinterval[i].packet.wz]
+                                   for i in range(self.seq_len)]) # torch.size([n,3])
+        self.imu_curinter['acc'] = torch.tensor([[self.oxts_raw_imu_curinterval[i].packet.ax,
+                                  self.oxts_raw_imu_curinterval[i].packet.ay,
+                                  self.oxts_raw_imu_curinterval[i].packet.az]
+                                  for i in range(self.seq_len)])
+        # TODO: understand the gt... and Tw_imu?
+        self.imu_curinter['gt_rot'] = pp.euler2SO3(torch.tensor([[self.oxts_raw_imu_curinterval[i].packet.roll,
+                                                  self.oxts_raw_imu_curinterval[i].packet.pitch,
+                                                  self.oxts_raw_imu_curinterval[i].packet.yaw]
+                                                  for i in range(self.seq_len)]))
+        self.imu_curinter['gt_vel'] = self.imu_curinter['gt_rot'] @ torch.tensor([[self.oxts_raw_imu_curinterval[i].packet.vf,
+                                                   self.oxts_raw_imu_curinterval[i].packet.vl,
+                                                   self.oxts_raw_imu_curinterval[i].packet.vu]
+                                                   for i in range(self.seq_len)])
+        self.imu_curinter['gt_pos'] = torch.tensor(np.array([self.oxts_raw_imu_curinterval[i].T_w_imu[0:3, 3]
+                                             for i in range(self.seq_len)]))
+
+    
     # point-wise timestamp is now only used for motion undistortion (deskewing)
     def get_point_ts(self, point_ts = None):
         if self.config.deskew:
             if point_ts is not None and self.config.valid_ts_in_points: 
                 self.cur_point_ts_torch = torch.tensor(point_ts, device=self.device, dtype=self.dtype)
-            else:
+            else: # default
                 H = 64
                 W = 1024
                 if self.cur_point_cloud_torch.shape[0] == H*W:  # for Ouster 64-beam LiDAR
                     if not self.silence:
                         print("Ouster-64 point cloud deskewed")
                     self.cur_point_ts_torch = (torch.floor(torch.arange(H * W) / H) / W).reshape(-1, 1).to(self.cur_point_cloud_torch)
-                else:
+                else: # default
                     yaw = -torch.atan2(self.cur_point_cloud_torch[:,1], self.cur_point_cloud_torch[:,0])  # y, x -> rad (clockwise)
-                    if self.config.lidar_type_guess == "velodyne":
+                    if self.config.lidar_type_guess == "velodyne": # default
                         # for velodyne LiDAR (from -x axis, clockwise)
                         self.cur_point_ts_torch = 0.5 * (yaw / math.pi + 1.0) # [0,1]
                         if not self.silence:
@@ -303,31 +403,73 @@ class SLAMDataset(Dataset):
                                                                              self.config.min_range, crop_max_range)
 
         if self.config.kitti_correction_on:
-            self.cur_point_cloud_torch = intrinsic_correct(self.cur_point_cloud_torch, self.config.correction_deg)
+            self.cur_point_cloud_torch = intrinsic_correct(self.cur_point_cloud_torch, self.config.correction_deg) # TODO
 
         T3 = get_time()
 
+        init_imu_integrator = {}
         # prepare for the registration
         if self.processed_frame == 0: # initialize the first frame, no tracking yet
             if self.config.track_on:
                 self.odom_poses.append(self.cur_pose_ref)
             if self.config.pgo_on:
                 self.pgo_poses.append(self.cur_pose_ref)
-            if self.gt_pose_provided and frame_id > 0: # not start with the first frame
+            if self.gt_pose_provided and frame_id > 0: # not start with the first frame, default false
                 self.last_odom_tran = inv(self.poses_ref[frame_id-1]) @ self.cur_pose_ref # T_last<-cur
             self.travel_dist.append(0.)
             self.last_pose_ref = self.cur_pose_ref
+            # TODO: IMU
+            # init_imu_integrator['pos'] = torch.zeros(3) #wrong. + lidar to imu
+            # init_imu_integrator['rot'] = pp.identity_SO3()
+            init_imu_integrator['vel'] = torch.zeros(3)
+            self.last_imu_integrator_vel = init_imu_integrator['vel']
+
         elif self.processed_frame > 0: 
             # pose initial guess
-            last_tran = np.linalg.norm(self.last_odom_tran[:3,3])
+            last_tran = np.linalg.norm(self.last_odom_tran[:3,3])  # from update_odom_pose()
             # if self.config.uniform_motion_on and not self.lose_track and last_tran > 0.2 * self.config.voxel_size_m: # apply uniform motion model here
-            if self.config.uniform_motion_on and not self.lose_track: # apply uniform motion model here
+            if self.config.uniform_motion_on and not self.lose_track: # default: apply uniform motion model here
                 cur_pose_init_guess = self.last_pose_ref @ self.last_odom_tran # T_world<-cur = T_world<-last @ T_last<-cur
             else: # static initial guess
                 cur_pose_init_guess = self.last_pose_ref
 
-            if not self.config.track_on and self.gt_pose_provided:
+            if not self.config.track_on and self.gt_pose_provided: # default off
                 cur_pose_init_guess = self.poses_ref[frame_id]
+
+            
+            # #IMU--2 pose initial guess
+            # # TODO: transform to imu frame; pyposeSO3 (self.last_pose_ref)
+            last_pose_in_imu = np.linalg.inv(self.T_pose_to_velo) @ self.last_pose_ref # @ self.T_pose_to_velo # TODO: order?
+            init_imu_integrator['pos'] = torch.tensor(last_pose_in_imu[:3,3], dtype=self.dtype)
+            init_imu_integrator['rot'] = pp.mat2SO3(torch.tensor(last_pose_in_imu[:3,:3], dtype=self.dtype))
+            
+            init_imu_integrator['vel'] = self.last_imu_integrator_vel
+            integrator = pp.module.IMUPreintegrator(init_imu_integrator['pos'], init_imu_integrator['rot'], init_imu_integrator['vel'],
+                                                reset=False).to(self.device)
+            # print('--------------------',self.imu_curinter['dt'].shape)
+            # print(len(self.imu_curinter['dt'].shape))
+            # print(len(self.imu_curinter['acc'].shape))
+            # print(len(self.imu_curinter['gyro'].shape))
+            state = integrator(dt=self.imu_curinter['dt'].to(self.device) , gyro=self.imu_curinter['gyro'].to(self.device),
+                               acc=self.imu_curinter['acc'].to(self.device)) #, TODO: rot=data['init_rot']) init_rot gt_rot?
+            # # # state = integrator(ang,acc,dt)
+            pos_imu_preinte = state['pos'][-1,:] # [1,n,3]
+            rot_imu_preinte = state['rot'][-1,:]
+            vel_imu_preinte = state['vel'][-1,:]
+            self.last_imu_integrator_vel = vel_imu_preinte
+            # # self.imu_preinte_tran = np.eye(4)
+            # # TODO transform to lidar coord; S03; initial guess
+            # # cur_pose_init_guess = self.last_pose_ref @ self.imu_preinte_tran
+            # Convert tensors back 
+            pos_imu_preinte_np = pos_imu_preinte[-1,:].numpy() #last output
+            rot_imu_preinte_np = rot_imu_preinte[-1,:].matrix().numpy()
+
+            cur_preinte_inimu = np.eye(4) 
+            cur_preinte_inimu[:3,3] = pos_imu_preinte_np
+            cur_preinte_inimu[:3,:3] = rot_imu_preinte_np
+
+            cur_pose_init_guess = self.T_pose_to_velo @ cur_preinte_inimu # in lidar frame, local
+            
             
             # pose initial guess tensor
             self.cur_pose_guess_torch = torch.tensor(cur_pose_init_guess, dtype=torch.float64, device=self.device)   
@@ -369,6 +511,9 @@ class SLAMDataset(Dataset):
                 self.cur_source_points = deskewing(self.cur_source_points, cur_source_ts, 
                                                    torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype)) # T_last<-cur
                 
+                # # IMU-- 3 deskewing
+                # self.cur_source_points = deskewing_IMU(self.cur_source_points, cur_source_ts, 
+                #                                    torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype)) # T_last<-cur
             # print("# Source point for registeration : ", cur_source_torch.shape[0])
     
         T4 = get_time()
@@ -417,9 +562,9 @@ class SLAMDataset(Dataset):
         self.last_pose_ref = self.cur_pose_ref # update for the next frame
 
         # deskewing (motion undistortion using the estimated transformation) for the sampled points for mapping
-        if self.config.deskew and not self.lose_track:
-            self.cur_point_cloud_torch = deskewing(self.cur_point_cloud_torch, self.cur_point_ts_torch, 
-                                         torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype)) # T_last<-cur
+        # if self.config.deskew and not self.lose_track:
+        #     self.cur_point_cloud_torch = deskewing(self.cur_point_cloud_torch, self.cur_point_ts_torch, 
+        #                                  torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype)) # T_last<-cur
         
         if self.lose_track:
             self.consecutive_lose_track_frame += 1
@@ -628,6 +773,53 @@ class SLAMDataset(Dataset):
             o3d.t.io.write_point_cloud(os.path.join(run_path, "map", "merged_point_cloud.ply"), map_out_o3d)
 
 
+    
+
+
+def loadTimestamps(ts_dir):
+    # ''' load timestamps '''
+
+    # with open(os.path.join(ts_dir, 'timestamps.txt')) as f:
+    #     data=f.read().splitlines()
+    # ts = [l.split(' ')[0] for l in data] 
+
+    """source pykitti raw: Load timestamps from file."""
+    timestamp_file = os.path.join( ts_dir, 'timestamps.txt')
+
+    # Read and parse the timestamps
+    timestamps = []
+    with open(timestamp_file, 'r') as f:
+        for line in f.readlines():
+            # NB: datetime only supports microseconds, but KITTI timestamps
+            # give nanoseconds, so need to truncate last 4 characters to
+            # get rid of \n (counts as 1) and extra 3 digits
+            t = dt.datetime.strptime(line[:-4], '%Y-%m-%d %H:%M:%S.%f')
+            timestamps.append(t)
+
+    # # TODO: Subselect the chosen range of frames, if any
+    # if frames is not None:
+    #     timestamps = [timestamps[i] for i in frames]
+
+    return timestamps
+
+
+def loadOxtsData(oxts_dir):
+    ''' source kitti360 devkit: reads GPS/IMU data from files to memory. requires base directory
+    (=sequence directory as parameter). if frames is not specified, loads all frames. '''
+
+    ts = []
+    ts = loadTimestamps(oxts_dir)
+    oxts  = []
+    for i in range(len(ts)):
+      if len(ts[i]):
+        try:
+          oxts.append(np.loadtxt(os.path.join(oxts_dir, 'data', '%010d.txt'%i)))
+        except:
+          oxts.append([])
+      else:
+        oxts.append([])
+    return oxts,ts
+
 def read_point_cloud(filename: str, color_channel: int = 0, bin_channel_count: int = 4) -> np.ndarray:
 
     # read point cloud from either (*.ply, *.pcd, *.las) or (kitti *.bin) format
@@ -641,7 +833,7 @@ def read_point_cloud(filename: str, color_channel: int = 0, bin_channel_count: i
         # for Boreas, bin_channel_count = 6 # (x,y,z,i,r,ts)
         points = data_loaded.reshape((-1, bin_channel_count))
         # print(points)
-        ts = None
+        ts = None # KITTI
         if bin_channel_count == 6:
             ts = points[:, -1]
         

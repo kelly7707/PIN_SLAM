@@ -32,7 +32,7 @@ def run_pin_slam():
 
     config = Config()
     if len(sys.argv) > 1:
-        config.load(sys.argv[1])
+        config.load(sys.argv[1]) #gets in, load yaml
     else:
         sys.exit("Please provide the path to the config file.\nTry: \
                   python3 pin_slam.py path_to_config.yaml [dataset_name] [sequence_name] [random_seed]")

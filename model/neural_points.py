@@ -27,8 +27,8 @@ class NeuralPoints(nn.Module):
 
         # self.point_level_num = config.point_level_num
 
-        self.geo_feature_dim = config.feature_dim
-        self.geo_feature_std = config.feature_std
+        self.geo_feature_dim = config.feature_dim # 8
+        self.geo_feature_std = config.feature_std # 0
 
         self.color_feature_dim = config.feature_dim
         self.color_feature_std = config.feature_std
@@ -37,7 +37,7 @@ class NeuralPoints(nn.Module):
             self.position_encoder_geo = GaussianFourierFeatures(config)
             self.position_encoder_color = GaussianFourierFeatures(config)
         else:
-            self.position_encoder_geo = PositionalEncoder(config)
+            self.position_encoder_geo = PositionalEncoder(config) # default
             self.position_encoder_color = PositionalEncoder(config)
 
         self.mean_grid_sampling = False # NOTE: sample the gravity center of the points inside the voxel or keep the point that is closest to the voxel center
@@ -87,8 +87,8 @@ class NeuralPoints(nn.Module):
         # the local map
         self.local_neural_points = torch.empty((0, 3), dtype=self.dtype, device=self.device)
         self.local_point_orientations = torch.empty((0, 4), dtype=self.dtype, device=self.device) # as quaternion
-        self.local_geo_features = nn.Parameter() 
-        self.local_color_features = nn.Parameter() # learnable parameters, will be optimized during training. 
+        self.local_geo_features = nn.Parameter() # learnable parameters, will be optimized during training.
+        self.local_color_features = nn.Parameter()  
         self.local_point_certainties = torch.empty((0), dtype=self.dtype, device=self.device)
         self.local_point_ts_update = torch.empty((0), device=self.device, dtype=torch.long)
         self.local_mask = None

@@ -124,24 +124,24 @@ class Mapper():
         
         # dynamic filtering
         self.static_mask = torch.ones(frame_point_torch.shape[0], dtype=torch.bool, device=self.config.device)
-        if filter_dynamic:
-            # transformed to the global frame
-            frame_point_torch_global = transform_torch(frame_point_torch, cur_pose_torch)
-            self.static_mask = self.dynamic_filter(frame_point_torch_global)
-            dynamic_count = (self.static_mask == False).sum().item()
-            if not self.silence:
-                print("# Dynamic points filtered: ", dynamic_count)
-            frame_point_torch = frame_point_torch[self.static_mask]
+        # if filter_dynamic:
+        #     # transformed to the global frame
+        #     frame_point_torch_global = transform_torch(frame_point_torch, cur_pose_torch)
+        #     self.static_mask = self.dynamic_filter(frame_point_torch_global)
+        #     dynamic_count = (self.static_mask == False).sum().item()
+        #     if not self.silence:
+        #         print("# Dynamic points filtered: ", dynamic_count)
+        #     frame_point_torch = frame_point_torch[self.static_mask]
 
         frame_color_torch = None
-        if self.config.color_on:
-            frame_color_torch = point_cloud_torch[:,3:]
-            if filter_dynamic:
-                frame_color_torch = frame_color_torch[self.static_mask]
+        # if self.config.color_on:
+        #     frame_color_torch = point_cloud_torch[:,3:]
+        #     if filter_dynamic:
+        #         frame_color_torch = frame_color_torch[self.static_mask]
         
-        if frame_label_torch is not None:
-            if filter_dynamic:
-                frame_label_torch = frame_label_torch[self.static_mask]
+        # if frame_label_torch is not None:
+        #     if filter_dynamic:
+        #         frame_label_torch = frame_label_torch[self.static_mask]
 
         frame_normal_torch = None # not used yet
 
@@ -163,7 +163,7 @@ class Mapper():
         if self.config.from_sample_points:
             if self.config.from_all_samples:
                 update_points = coord
-            else: #default
+            else: # default
                 update_points = coord[torch.abs(sdf_label) < self.config.surface_sample_range_m * self.config.map_surface_ratio, :]
                 update_points = transform_torch(update_points, cur_pose_torch) 
         else:   
