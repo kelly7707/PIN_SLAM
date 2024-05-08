@@ -268,17 +268,16 @@ class SLAMDataset(Dataset):
             # # sync_imu_filename = os.path.join(self.config.sync_imu_path,'data', self.sync_imu_filenames[frame_id])
             sync_imu_filename = os.path.join(self.config.sync_imu_path, 'data', '%010d.txt'%frame_id)
             # # sync_imu,ts = loadOxtsData(self.config.sync_imu_path)
-            # cur_sync_imu = np.loadtxt(sync_imu_filename) # imu data at current frame TODO: dt...
+            # cur_sync_imu = np.loadtxt(sync_imu_filename) # imu data at current frame 
             # self.cur_sync_imu_torch = torch.tensor(cur_sync_imu, device=self.device, dtype=self.dtype)
             
-            # TODO: check ts_pc v.s. ts_syncimu
+            # TODO: check ts_pc v.s. ts_syncimu, syncimu may ignore some frames (with little movement)
             self.ts_cur_imu = self.ts_syncimu[frame_id-1]
             self.ts_end_imu = self.ts_syncimu[frame_id]
 
-            # TODO: interpolate raw imu in between
-            # Find indices for current frame
+            # interpolate raw imu in between - Find indices for current frame
             start_index = np.searchsorted(self.ts_rawimu, self.ts_cur_imu, side='left')
-            end_index = np.searchsorted(self.ts_rawimu, self.ts_end_imu, side='left') # 'right'
+            end_index = np.searchsorted(self.ts_rawimu, self.ts_end_imu, side='left') # frame i+1, 'right'next ts after framei+1 
             self.read_raw_imu(start_index, end_index)
             # frame_id * 10 
 
@@ -422,11 +421,11 @@ class SLAMDataset(Dataset):
                 self.last_odom_tran = inv(self.poses_ref[frame_id-1]) @ self.cur_pose_ref # T_last<-cur
             self.travel_dist.append(0.)
             self.last_pose_ref = self.cur_pose_ref
-            # TODO: IMU
-            init_imu_integrator['pos'] = torch.zeros(3) #wrong. + lidar to imu
-            init_imu_integrator['rot'] = pp.identity_SO3()
-            self.last_imu_integrator_pos = init_imu_integrator['pos']
-            self.last_imu_integrator_rot = init_imu_integrator['rot']
+            # IMU frame0 initialization
+            # init_imu_integrator['pos'] = torch.zeros(3) #wrong. + lidar to imu
+            # init_imu_integrator['rot'] = pp.identity_SO3()
+            # self.last_imu_integrator_pos = init_imu_integrator['pos']
+            # self.last_imu_integrator_rot = init_imu_integrator['rot']
 
             init_imu_integrator['vel'] = torch.zeros(3)
             self.last_imu_integrator_vel = init_imu_integrator['vel']
@@ -445,15 +444,12 @@ class SLAMDataset(Dataset):
 
             
             # #IMU--2 pose initial guess
-            # # TODO: transform to imu frame; pyposeSO3 (self.last_pose_ref)
+            # #  transform to imu frame; pyposeSO3 (self.last_pose_ref)
             last_pose_in_imu = np.linalg.inv(self.T_pose_to_velo) @ self.last_pose_ref # @ self.T_pose_to_velo # TODO: order?
-            # init_imu_integrator['pos'] = torch.tensor(last_pose_in_imu[:3,3], dtype=self.dtype)
-            # init_imu_integrator['rot'] = pp.mat2SO3(torch.tensor(last_pose_in_imu[:3,:3], dtype=self.dtype))
+            init_imu_integrator['pos'] = torch.tensor(last_pose_in_imu[:3,3], dtype=self.dtype)
+            init_imu_integrator['rot'] = pp.mat2SO3(torch.tensor(last_pose_in_imu[:3,:3], dtype=self.dtype))
             
             init_imu_integrator['vel'] = self.last_imu_integrator_vel
-
-            init_imu_integrator['pos'] = self.last_imu_integrator_pos
-            init_imu_integrator['rot'] = self.last_imu_integrator_rot
 
             integrator = pp.module.IMUPreintegrator(init_imu_integrator['pos'], init_imu_integrator['rot'], init_imu_integrator['vel'],
                                                 reset=False).to(self.device)
@@ -464,44 +460,41 @@ class SLAMDataset(Dataset):
             state = integrator(dt=self.imu_curinter['dt'].to(self.device) , gyro=self.imu_curinter['gyro'].to(self.device),
                                acc=self.imu_curinter['acc'].to(self.device)) #, TODO: rot=data['init_rot']) init_rot gt_rot?
             # # # state = integrator(ang,acc,dt)
-            pos_imu_preinte = state['pos'][-1,:] # [1,n,3] or squeeze
-            rot_imu_preinte = state['rot'][-1,:]
-            vel_imu_preinte = state['vel'][-1,:]
+            pos_imu_preinte = state['pos'].squeeze(0) # [1,n,3] -> [n,3] , [-1,:]or squeeze
+            rot_imu_preinte = state['rot'].squeeze(0) 
+            vel_imu_preinte = state['vel'].squeeze(0)
             self.last_imu_integrator_vel = vel_imu_preinte[-1,:] # last item
             # # self.imu_preinte_tran = np.eye(4)
-            # # TODO transform to lidar coord; S03; initial guess
             # # cur_pose_init_guess = self.last_pose_ref @ self.imu_preinte_tran
-            # Convert tensors back 
+            # Convert tensors back: transform to lidar coord; S03; initial guess
             pos_imu_preinte_np = pos_imu_preinte[-1,:].cpu().numpy() #last output
-            rot_imu_preinte_np = rot_imu_preinte[-1,:].matrix().cpu().numpy()
+            rot_imu_preinte_np = rot_imu_preinte[-1,:].matrix().cpu().numpy() # pypose.SO3 -> rot
 
             cur_preinte_inimu = np.eye(4) 
             cur_preinte_inimu[:3,3] = pos_imu_preinte_np
             cur_preinte_inimu[:3,:3] = rot_imu_preinte_np
 
-            cur_pose_init_guess = self.T_pose_to_velo @ cur_preinte_inimu # in lidar frame, local
+            # cur_pose_init_guess = self.T_pose_to_velo @ cur_preinte_inimu # in lidar frame, local
             
             # --- testing: IMU preinte vidual
-            self.last_imu_integrator_pos = pos_imu_preinte[-1,:]
-            self.last_imu_integrator_rot = rot_imu_preinte[-1,:]
 
             plt.figure(figsize=(5, 5))
             
             ax = plt.axes(projection='3d')
             poses = state['pos'][-1,...].cpu().numpy()
-            poses_gt = self.imu_curinter['gt_pos'].cpu().numpy()
+            # poses_gt = self.imu_curinter['gt_pos'].cpu().numpy()
 
             self.vidual_poses.append(poses)
-            self.vidual_gtposes.append(poses_gt)
+            # self.vidual_gtposes.append(poses_gt)
             visual_poses_np = np.concatenate(self.vidual_poses, axis=0)
-            visual_gtposes_np = np.concatenate(self.vidual_gtposes, axis=0)
+            # visual_gtposes_np = np.concatenate(self.vidual_gtposes, axis=0)
 
             ax.plot3D(visual_poses_np[:,0], visual_poses_np[:,1], visual_poses_np[:,2], 'b')
-            ax.plot3D(visual_gtposes_np[:,0], visual_gtposes_np[:,1], visual_gtposes_np[:,2], 'r')
+            # ax.plot3D(visual_gtposes_np[:,0], visual_gtposes_np[:,1], visual_gtposes_np[:,2], 'r')
 
             plt.title("PyPose IMU Integrator")
-            plt.legend(["PyPose", "Ground Truth"])
-            figure = os.path.join(f'IMU preintegration_{frame_id}'+'.png')
+            # plt.legend(["PyPose", "Ground Truth"])
+            figure = os.path.join('/home/zjw/master_thesis/visual/testing'+f'IMU preintegration_{frame_id}'+'.png')
             plt.savefig(figure)
             print("Saved to", figure)
 
