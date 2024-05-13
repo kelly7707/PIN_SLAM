@@ -101,8 +101,8 @@ class PoseGraphManager:
 
     def add_combined_IMU_factor(self,cur_id: int, last_id: int): # TODO
         # TODO: initialization
-        # accBias = np.array([-0.3, 0.1, 0.2])
-        # gyroBias = np.array([0.1, 0.3, -0.1])
+        accBias = 
+        gyroBias = 
         bias = gtsam.imuBias.ConstantBias(accBias, gyroBias)
 
         # source gtsam.CombinedImuFactorExample.py
@@ -116,9 +116,9 @@ class PoseGraphManager:
         params.setAccelerometerCovariance(accel_sigma**2 * I_3x3)
         params.setIntegrationCovariance(1e-7**2 * I_3x3)
 
-        
-        self.graph_factors.add(gtsam.CombinedImuFactor(gtsam.symbol('x', last_id), V(i), X(i + 1),
-                                V(i + 1), B(i), B(i + 1), pim))
+        pim = 
+        self.graph_factors.add(gtsam.CombinedImuFactor(gtsam.symbol('x', last_id), gtsam.symbol('v', last_id), gtsam.symbol('x', cur_id),
+                                gtsam.symbol('v', cur_id), gtsam.symbol('b', last_id), gtsam.symbol('b', cur_id), pim))
     
     def add_loop_factor(self, cur_id: int, loop_id: int, loop_transform: np.ndarray, cov = None):
         """add a loop closure factor between two pose nodes
