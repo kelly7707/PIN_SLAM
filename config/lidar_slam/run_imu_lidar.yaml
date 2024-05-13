@@ -6,7 +6,7 @@ setting:
   sync_imu_path: "./data/kitti_360/2013_05_28_drive_0000/data_poses/oxts_sync"
   raw_imu_path: "./data/kitti_360/2013_05_28_drive_0000/data_poses/oxts_raw"
   calib360_path: "./data/kitti_360/2013_05_28_drive_0000/calibration"
-  end_frame: 100
+  end_frame: 200
   
   gpu_id: "1" # cuda 0
 process:

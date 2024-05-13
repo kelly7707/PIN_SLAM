@@ -78,6 +78,7 @@ def run_pin_slam():
         if dataset.gt_pose_provided: 
             pgm.add_pose_prior(0, dataset.poses_ref[config.begin_frame], fixed=True)
         else:
+            # --- prior factor_1st frame
             pgm.add_pose_prior(0, np.eye(4), fixed=True)
 
     # loop closure detector
@@ -137,93 +138,101 @@ def run_pin_slam():
 
         # III. Loop detection and pgo 
         if config.pgo_on: 
-            if config.use_gt_loop:
-                lcd_gt.add_node(used_frame_id, dataset.poses_w_closed[frame_id]) # set current node in the loop detector
-            elif config.global_loop_on:
-                if config.local_map_context and used_frame_id >= config.local_map_context_latency: # local map context
-                    cur_frame = used_frame_id-config.local_map_context_latency
-                    cur_pose = torch.tensor(dataset.pgo_poses[cur_frame], device=config.device, dtype=torch.float64)
-                    neural_points.reset_local_map(cur_pose[:3,3], None, cur_frame, False, config.loop_local_map_time_window) 
-                    context_pc_local = transform_torch(neural_points.local_neural_points.detach(), torch.linalg.inv(cur_pose)) # transformed back into the local frame
-                    neural_points_feature = neural_points.local_geo_features[:-1].detach() if config.loop_with_feature else None
-                    lcd_npmc.add_node(cur_frame, context_pc_local, neural_points_feature)
-                else: # first frame not yet have local map, use scan context
-                    lcd_npmc.add_node(used_frame_id, dataset.cur_point_cloud_torch)
+            # if config.use_gt_loop:
+            #     lcd_gt.add_node(used_frame_id, dataset.poses_w_closed[frame_id]) # set current node in the loop detector
+            # elif config.global_loop_on:
+            #     if config.local_map_context and used_frame_id >= config.local_map_context_latency: # local map context
+            #         cur_frame = used_frame_id-config.local_map_context_latency
+            #         cur_pose = torch.tensor(dataset.pgo_poses[cur_frame], device=config.device, dtype=torch.float64)
+            #         neural_points.reset_local_map(cur_pose[:3,3], None, cur_frame, False, config.loop_local_map_time_window) 
+            #         context_pc_local = transform_torch(neural_points.local_neural_points.detach(), torch.linalg.inv(cur_pose)) # transformed back into the local frame
+            #         neural_points_feature = neural_points.local_geo_features[:-1].detach() if config.loop_with_feature else None
+            #         lcd_npmc.add_node(cur_frame, context_pc_local, neural_points_feature)
+            #     else: # first frame not yet have local map, use scan context
+            #         lcd_npmc.add_node(used_frame_id, dataset.cur_point_cloud_torch)
             
             pgm.add_frame_node(used_frame_id, dataset.pgo_poses[used_frame_id]) # add new node and pose initial guess
             pgm.init_poses = dataset.pgo_poses
 
             if used_frame_id > 0:
-                cur_edge_cov = cur_odom_cov if config.use_reg_cov_mat else None                    
-                pgm.add_odometry_factor(used_frame_id, used_frame_id-1, dataset.last_odom_tran, cov = cur_edge_cov) # T_p<-c
+                cur_edge_cov = cur_odom_cov if config.use_reg_cov_mat else None     
+                # --- between factor               
+                pgm.add_odometry_factor(used_frame_id, used_frame_id-1, dataset.last_odom_tran, cov = cur_edge_cov) # T_p<-c 
                 pgm.estimate_drift(dataset.travel_dist, used_frame_id) # estimate the current drift
+                # --- prior factor, default off
                 if config.pgo_with_pose_prior: # add pose prior
                     pgm.add_pose_prior(used_frame_id, dataset.pgo_poses[used_frame_id])
             
-            local_map_context_loop = False
-            if used_frame_id - pgm.last_loop_idx > config.pgo_freq and not dataset.stop_status:
-                if config.use_gt_loop:
-                    loop_id, loop_dist, loop_transform = lcd_gt.detect_loop() # T_l<-c
-                    if loop_id is not None and not config.silence:
-                        print("[bold red]GT loop event added: [/bold red]", lcd_gt.curr_node_idx, "---", loop_id, "(" , loop_dist, ")")
-                else:  # detect candidate local loop, find the nearest history pose and activate certain local map
-                    cur_pgo_poses = np.stack(dataset.pgo_poses)
-                    dist_to_past = np.linalg.norm(cur_pgo_poses[:,:3,3] - cur_pgo_poses[-1,:3,3], axis=1)
-                    loop_candidate_mask = (dataset.travel_dist[-1] - dataset.travel_dist > config.min_loop_travel_dist_ratio*config.local_map_radius)
-                    loop_id = None
-                    if loop_candidate_mask.any(): # have at least one candidate
-                        # firstly try to detect the local loop
-                        loop_id, loop_dist, loop_transform = detect_local_loop(dist_to_past, loop_candidate_mask, dataset.pgo_poses, pgm.drift_radius, used_frame_id, loop_reg_failed_count, config.voxel_size_m*5.0, config.silence)
-                        if loop_id is None and config.global_loop_on: # global loop detection (large drift)
-                            loop_id, loop_cos_dist, loop_transform, local_map_context_loop = lcd_npmc.detect_global_loop(cur_pgo_poses, dataset.pgo_poses, pgm.drift_radius*3.0, loop_candidate_mask, neural_points)     
-                if loop_id is not None:
-                    if config.loop_z_check_on and abs(loop_transform[2,3]) > config.voxel_size_m*4.0: # for multi-floor buildings, z may cause ambiguilties
-                        loop_id = None
-                        if not config.silence:
-                            print("[bold red]Delta z check failed, reject the loop[/bold red]") 
-                if loop_id is not None: # if a loop is found, we refine loop closure transform initial guess with a scan-to-map registration                    
-                    pose_init_np = dataset.pgo_poses[loop_id] @ loop_transform # T_w<-c = T_w<-l @ T_l<-c 
-                    pose_init_torch = torch.tensor(pose_init_np, device=config.device, dtype=torch.float64)
-                    neural_points.recreate_hash(pose_init_torch[:3,3], None, True, True, loop_id) # recreate hash and local map for registration, this is the reason why we'd better to keep the duplicated neural points until the end
-                    pose_refine_torch, loop_cov_mat, weight_pcd, reg_valid_flag = tracker.tracking(dataset.cur_source_points, pose_init_torch, loop_reg=True, vis_result=config.o3d_vis_on)
-                    # visualize the loop closure and loop registration
-                    if config.o3d_vis_on and o3d_vis.debug_mode > 1:
-                        points_torch_init = transform_torch(dataset.cur_source_points, pose_init_torch) # apply transformation
-                        points_o3d_init = o3d.geometry.PointCloud()
-                        points_o3d_init.points = o3d.utility.Vector3dVector(points_torch_init.detach().cpu().numpy().astype(np.float64))
-                        loop_neural_pcd = neural_points.get_neural_points_o3d(query_global=False, color_mode=o3d_vis.neural_points_vis_mode, random_down_ratio=1)
-                        o3d_vis.update(points_o3d_init, neural_points=loop_neural_pcd, pause_now=True)
-                        o3d_vis.update(weight_pcd, neural_points=loop_neural_pcd, pause_now=True)
-                    if reg_valid_flag: # refine succeed
-                        pose_refine_np = pose_refine_torch.detach().cpu().numpy()
-                        loop_transform = np.linalg.inv(dataset.pgo_poses[loop_id]) @ pose_refine_np # T_l<-c = T_l<-w @ T_w<-c
-                        if not config.silence:
-                            print("[bold green]Refine loop transformation succeed [/bold green]")
-                        # only conduct pgo when the loop and loop constraint is correct
-                        cur_edge_cov = loop_cov_mat if config.use_reg_cov_mat else None
-                        pgm.add_loop_factor(used_frame_id, loop_id, loop_transform, cov = cur_edge_cov)
-                        pgm.optimize_pose_graph() # conduct pgo
-                        cur_loop_vis_id = used_frame_id-config.local_map_context_latency if local_map_context_loop else used_frame_id
-                        pgm.loop_edges.append(np.array([loop_id, cur_loop_vis_id],dtype=np.uint32)) # only for vis
-                        # update the neural points and poses
-                        pose_diff_torch = torch.tensor(pgm.get_pose_diff(), device=config.device, dtype=config.dtype)
-                        dataset.cur_pose_torch = torch.tensor(pgm.cur_pose, device=config.device, dtype=config.dtype)
-                        neural_points.adjust_map(pose_diff_torch)
-                        neural_points.recreate_hash(dataset.cur_pose_torch[:3,3], None, (not config.pgo_merge_map), config.rehash_with_time, used_frame_id) # recreate hash from current time
-                        mapper.transform_data_pool(pose_diff_torch) # transform global pool
-                        dataset.update_poses_after_pgo(pgm.cur_pose, pgm.pgo_poses)
-                        pgm.last_loop_idx = used_frame_id
-                        pgm.min_loop_idx = min(pgm.min_loop_idx, loop_id)
-                        loop_reg_failed_count = 0
-                        if config.o3d_vis_on:
-                            o3d_vis.before_pgo = False
-                    else:
-                        if not config.silence:
-                            print("[bold red]Registration failed, reject the loop candidate [/bold red]")
-                        neural_points.recreate_hash(dataset.cur_pose_torch[:3,3], None, True, True, used_frame_id) # if failed, you need to reset the local map back to current frame
-                        loop_reg_failed_count += 1
-                        if config.o3d_vis_on and o3d_vis.debug_mode > 1:
-                            o3d_vis.stop()
+                # --- optimization & update
+                pgm.optimize_pose_graph()
+                # TODO
+
+            # local_map_context_loop = False
+            # if used_frame_id - pgm.last_loop_idx > config.pgo_freq and not dataset.stop_status:
+            #     if config.use_gt_loop:
+            #         loop_id, loop_dist, loop_transform = lcd_gt.detect_loop() # T_l<-c
+            #         if loop_id is not None and not config.silence:
+            #             print("[bold red]GT loop event added: [/bold red]", lcd_gt.curr_node_idx, "---", loop_id, "(" , loop_dist, ")")
+            #     else:  # detect candidate local loop, find the nearest history pose and activate certain local map
+            #         cur_pgo_poses = np.stack(dataset.pgo_poses)
+            #         dist_to_past = np.linalg.norm(cur_pgo_poses[:,:3,3] - cur_pgo_poses[-1,:3,3], axis=1)
+            #         loop_candidate_mask = (dataset.travel_dist[-1] - dataset.travel_dist > config.min_loop_travel_dist_ratio*config.local_map_radius)
+            #         loop_id = None
+            #         if loop_candidate_mask.any(): # have at least one candidate
+            #             # firstly try to detect the local loop
+            #             loop_id, loop_dist, loop_transform = detect_local_loop(dist_to_past, loop_candidate_mask, dataset.pgo_poses, pgm.drift_radius, used_frame_id, loop_reg_failed_count, config.voxel_size_m*5.0, config.silence)
+            #             if loop_id is None and config.global_loop_on: # global loop detection (large drift)
+            #                 loop_id, loop_cos_dist, loop_transform, local_map_context_loop = lcd_npmc.detect_global_loop(cur_pgo_poses, dataset.pgo_poses, pgm.drift_radius*3.0, loop_candidate_mask, neural_points)     
+            #     if loop_id is not None:
+            #         if config.loop_z_check_on and abs(loop_transform[2,3]) > config.voxel_size_m*4.0: # for multi-floor buildings, z may cause ambiguilties
+            #             loop_id = None
+            #             if not config.silence:
+            #                 print("[bold red]Delta z check failed, reject the loop[/bold red]") 
+            #     if loop_id is not None: # if a loop is found, we refine loop closure transform initial guess with a scan-to-map registration                    
+            #         pose_init_np = dataset.pgo_poses[loop_id] @ loop_transform # T_w<-c = T_w<-l @ T_l<-c 
+            #         pose_init_torch = torch.tensor(pose_init_np, device=config.device, dtype=torch.float64)
+            #         neural_points.recreate_hash(pose_init_torch[:3,3], None, True, True, loop_id) # recreate hash and local map for registration, this is the reason why we'd better to keep the duplicated neural points until the end
+            #         pose_refine_torch, loop_cov_mat, weight_pcd, reg_valid_flag = tracker.tracking(dataset.cur_source_points, pose_init_torch, loop_reg=True, vis_result=config.o3d_vis_on)
+            #         # visualize the loop closure and loop registration
+            #         if config.o3d_vis_on and o3d_vis.debug_mode > 1:
+            #             points_torch_init = transform_torch(dataset.cur_source_points, pose_init_torch) # apply transformation
+            #             points_o3d_init = o3d.geometry.PointCloud()
+            #             points_o3d_init.points = o3d.utility.Vector3dVector(points_torch_init.detach().cpu().numpy().astype(np.float64))
+            #             loop_neural_pcd = neural_points.get_neural_points_o3d(query_global=False, color_mode=o3d_vis.neural_points_vis_mode, random_down_ratio=1)
+            #             o3d_vis.update(points_o3d_init, neural_points=loop_neural_pcd, pause_now=True)
+            #             o3d_vis.update(weight_pcd, neural_points=loop_neural_pcd, pause_now=True)
+            #         if reg_valid_flag: # refine succeed
+            #             pose_refine_np = pose_refine_torch.detach().cpu().numpy()
+            #             loop_transform = np.linalg.inv(dataset.pgo_poses[loop_id]) @ pose_refine_np # T_l<-c = T_l<-w @ T_w<-c
+            #             if not config.silence:
+            #                 print("[bold green]Refine loop transformation succeed [/bold green]")
+            #             # only conduct pgo when the loop and loop constraint is correct
+            #             cur_edge_cov = loop_cov_mat if config.use_reg_cov_mat else None
+            #             pgm.add_loop_factor(used_frame_id, loop_id, loop_transform, cov = cur_edge_cov)
+                        
+            #             # --- optimization & update
+            #             pgm.optimize_pose_graph() # conduct pgo
+            #             cur_loop_vis_id = used_frame_id-config.local_map_context_latency if local_map_context_loop else used_frame_id
+            #             pgm.loop_edges.append(np.array([loop_id, cur_loop_vis_id],dtype=np.uint32)) # only for vis
+            #             # update the neural points and poses
+            #             pose_diff_torch = torch.tensor(pgm.get_pose_diff(), device=config.device, dtype=config.dtype)
+            #             dataset.cur_pose_torch = torch.tensor(pgm.cur_pose, device=config.device, dtype=config.dtype)
+            #             neural_points.adjust_map(pose_diff_torch)
+            #             neural_points.recreate_hash(dataset.cur_pose_torch[:3,3], None, (not config.pgo_merge_map), config.rehash_with_time, used_frame_id) # recreate hash from current time
+            #             mapper.transform_data_pool(pose_diff_torch) # transform global pool
+            #             dataset.update_poses_after_pgo(pgm.cur_pose, pgm.pgo_poses)
+            #             pgm.last_loop_idx = used_frame_id
+            #             pgm.min_loop_idx = min(pgm.min_loop_idx, loop_id)
+            #             loop_reg_failed_count = 0
+            #             if config.o3d_vis_on:
+            #                 o3d_vis.before_pgo = False
+            #         else:
+            #             if not config.silence:
+            #                 print("[bold red]Registration failed, reject the loop candidate [/bold red]")
+            #             neural_points.recreate_hash(dataset.cur_pose_torch[:3,3], None, True, True, used_frame_id) # if failed, you need to reset the local map back to current frame
+            #             loop_reg_failed_count += 1
+            #             if config.o3d_vis_on and o3d_vis.debug_mode > 1:
+            #                 o3d_vis.stop()
 
         T4 = get_time()
         

@@ -79,7 +79,7 @@ class PoseGraphManager:
                                             cov_model))
 
     def add_odometry_factor(self, cur_id: int, last_id: int, odom_transform: np.ndarray, cov = None):
-        """add a odometry factor between two adjacent pose nodes
+        """! add a odometry factor between two adjacent pose nodes
         Args:
             cur_id: int
             last_id: int
@@ -99,6 +99,27 @@ class PoseGraphManager:
                                                 cov_model))  # NOTE: add robust kernel
         
 
+    def add_combined_IMU_factor(self,cur_id: int, last_id: int): # TODO
+        # TODO: initialization
+        # accBias = np.array([-0.3, 0.1, 0.2])
+        # gyroBias = np.array([0.1, 0.3, -0.1])
+        bias = gtsam.imuBias.ConstantBias(accBias, gyroBias)
+
+        # source gtsam.CombinedImuFactorExample.py
+        GRAVITY = 9.81
+        params = gtsam.PreintegrationCombinedParams.MakeSharedU(GRAVITY) # TODO up or down?
+        # Some arbitrary noise sigmas
+        gyro_sigma = 1e-3
+        accel_sigma = 1e-3
+        I_3x3 = np.eye(3)
+        params.setGyroscopeCovariance(gyro_sigma**2 * I_3x3)
+        params.setAccelerometerCovariance(accel_sigma**2 * I_3x3)
+        params.setIntegrationCovariance(1e-7**2 * I_3x3)
+
+        
+        self.graph_factors.add(gtsam.CombinedImuFactor(gtsam.symbol('x', last_id), V(i), X(i + 1),
+                                V(i + 1), B(i), B(i + 1), pim))
+    
     def add_loop_factor(self, cur_id: int, loop_id: int, loop_transform: np.ndarray, cov = None):
         """add a loop closure factor between two pose nodes
         Args:
@@ -121,7 +142,7 @@ class PoseGraphManager:
 
     def optimize_pose_graph(self):
         
-        if self.config.pgo_with_lm:
+        if self.config.pgo_with_lm: # default
             opt_param = gtsam.LevenbergMarquardtParams()
             opt_param.setMaxIterations(self.config.pgo_max_iter)
             opt = gtsam.LevenbergMarquardtOptimizer(self.graph_factors, self.graph_initials, opt_param)

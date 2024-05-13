@@ -444,8 +444,9 @@ class SLAMDataset(Dataset):
 
             
             # #IMU--2 pose initial guess
-            # #  transform to imu frame; pyposeSO3 (self.last_pose_ref)
-            last_pose_in_imu = np.linalg.inv(self.T_pose_to_velo) @ self.last_pose_ref # @ self.T_pose_to_velo # TODO: order?
+            # #  transform to imu frame; pyposeSO3 (self.last_pose_ref # lidar, local)
+            # last_pose_in_imu =  self.last_pose_ref @ self.T_pose_to_velo # @ np.linalg.inv(self.T_pose_to_velo) # @ self.T_pose_to_velo # TODO: order?
+            last_pose_in_imu = self.T_pose_to_velo @ self.last_pose_ref @ np.linalg.inv(self.T_pose_to_velo)
             init_imu_integrator['pos'] = torch.tensor(last_pose_in_imu[:3,3], dtype=self.dtype)
             init_imu_integrator['rot'] = pp.mat2SO3(torch.tensor(last_pose_in_imu[:3,:3], dtype=self.dtype))
             
@@ -475,28 +476,30 @@ class SLAMDataset(Dataset):
             cur_preinte_inimu[:3,:3] = rot_imu_preinte_np
 
             # cur_pose_init_guess = self.T_pose_to_velo @ cur_preinte_inimu # in lidar frame, local
+            cur_pose_init_guess =  np.linalg.inv(self.T_pose_to_velo) @ last_pose_in_imu @ self.T_pose_to_velo # @ self.T_pose_to_velo  # @ np.linalg.inv(self.T_pose_to_velo)
             
             # --- testing: IMU preinte vidual
+            if frame_id%10==0:
+                plt.figure(figsize=(5, 5))
+                
+                ax = plt.axes(projection='3d')
+                poses = state['pos'][-1,...].cpu().numpy() # output, wrt. wrt initial imu frame
+                # poses = self.T_pose_to_velo @ cur_preinte_inimu.cpu().numpy()
+                # poses_gt = self.imu_curinter['gt_pos'].cpu().numpy()
 
-            plt.figure(figsize=(5, 5))
-            
-            ax = plt.axes(projection='3d')
-            poses = state['pos'][-1,...].cpu().numpy()
-            # poses_gt = self.imu_curinter['gt_pos'].cpu().numpy()
+                self.vidual_poses.append(poses)
+                # self.vidual_gtposes.append(poses_gt)
+                visual_poses_np = np.concatenate(self.vidual_poses, axis=0)
+                # visual_gtposes_np = np.concatenate(self.vidual_gtposes, axis=0)
 
-            self.vidual_poses.append(poses)
-            # self.vidual_gtposes.append(poses_gt)
-            visual_poses_np = np.concatenate(self.vidual_poses, axis=0)
-            # visual_gtposes_np = np.concatenate(self.vidual_gtposes, axis=0)
+                ax.plot3D(visual_poses_np[:,0], visual_poses_np[:,1], visual_poses_np[:,2], 'b')
+                # ax.plot3D(visual_gtposes_np[:,0], visual_gtposes_np[:,1], visual_gtposes_np[:,2], 'r')
 
-            ax.plot3D(visual_poses_np[:,0], visual_poses_np[:,1], visual_poses_np[:,2], 'b')
-            # ax.plot3D(visual_gtposes_np[:,0], visual_gtposes_np[:,1], visual_gtposes_np[:,2], 'r')
-
-            plt.title("PyPose IMU Integrator")
-            # plt.legend(["PyPose", "Ground Truth"])
-            figure = os.path.join('/home/zjw/master_thesis/visual/testing'+f'IMU preintegration_{frame_id}'+'.png')
-            plt.savefig(figure)
-            print("Saved to", figure)
+                plt.title("PyPose IMU Integrator")
+                # plt.legend(["PyPose", "Ground Truth"])
+                figure = os.path.join('/home/zjw/master_thesis/visual/testing'+f'IMU preintegration_{frame_id}'+'.png')
+                plt.savefig(figure)
+                print("Saved to", figure)
 
 
             # --- pose initial guess tensor
