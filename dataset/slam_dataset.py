@@ -183,8 +183,8 @@ class SLAMDataset(Dataset):
         self.cur_source_colors = None
 
         # ts
-        self.ts_syncimu = loadTimestamps(self.config.sync_imu_path)
         self.ts_pc = loadTimestamps(self.config.pc_path)
+        self.ts_syncimu = loadTimestamps(self.config.sync_imu_path)
         self.ts_rawimu = loadTimestamps(self.config.raw_imu_path)
 
         # testing IMU
@@ -265,19 +265,23 @@ class SLAMDataset(Dataset):
         
         if frame_id>0:
             # IMU--1 load IMU(kitti)
-            # # sync_imu_filename = os.path.join(self.config.sync_imu_path,'data', self.sync_imu_filenames[frame_id])
             sync_imu_filename = os.path.join(self.config.sync_imu_path, 'data', '%010d.txt'%frame_id)
-            # # sync_imu,ts = loadOxtsData(self.config.sync_imu_path)
-            # cur_sync_imu = np.loadtxt(sync_imu_filename) # imu data at current frame 
-            # self.cur_sync_imu_torch = torch.tensor(cur_sync_imu, device=self.device, dtype=self.dtype)
+            # # # sync_imu,ts = loadOxtsData(self.config.sync_imu_path)
+            # # cur_sync_imu = np.loadtxt(sync_imu_filename) # imu data at current frame 
+            # # self.cur_sync_imu_torch = torch.tensor(cur_sync_imu, device=self.device, dtype=self.dtype)
             
-            # TODO: check ts_pc v.s. ts_syncimu, syncimu may ignore some frames (with little movement)
-            self.ts_cur_imu = self.ts_syncimu[frame_id-1]
-            self.ts_end_imu = self.ts_syncimu[frame_id]
 
-            # interpolate raw imu in between - Find indices for current frame
-            start_index = np.searchsorted(self.ts_rawimu, self.ts_cur_imu, side='left')
-            end_index = np.searchsorted(self.ts_rawimu, self.ts_end_imu, side='left') # frame i+1, 'right'next ts after framei+1 
+            # # ts_pc v.s. ts_syncimu, syncimu may ignore some frames (with little movement)
+            # self.ts_last_imu = self.ts_syncimu[frame_id-1]
+            # self.ts_cur_imu = self.ts_syncimu[frame_id]
+            # assert np.abs((self.ts_last_imu-self.ts_pc[frame_id-1]).total_seconds())<0.01
+            # # interpolate raw imu in between - Find indices for current frame
+            # start_index_syncraw = np.searchsorted(self.ts_rawimu, self.ts_last_imu, side='left')
+            # end_index_syncraw = np.searchsorted(self.ts_rawimu, self.ts_cur_imu, side='left') # frame i+1, 'right'next ts after framei+1 
+            
+            start_index = find_closest_timestamp_index(self.ts_pc[frame_id-1],self.ts_rawimu)
+            end_index = find_closest_timestamp_index(self.ts_pc[frame_id],self.ts_rawimu)
+            
             self.read_raw_imu(start_index, end_index)
             # frame_id * 10 
 
@@ -429,6 +433,7 @@ class SLAMDataset(Dataset):
 
             init_imu_integrator['vel'] = torch.zeros(3)
             self.last_imu_integrator_vel = init_imu_integrator['vel']
+            self.imu_preinte_continuous_test = np.eye(4)
 
         elif self.processed_frame > 0: 
             # pose initial guess
@@ -446,7 +451,8 @@ class SLAMDataset(Dataset):
             # #IMU--2 pose initial guess
             # #  transform to imu frame; pyposeSO3 (self.last_pose_ref # lidar, local)
             # last_pose_in_imu =  self.last_pose_ref @ self.T_pose_to_velo # @ np.linalg.inv(self.T_pose_to_velo) # @ self.T_pose_to_velo # TODO: order?
-            last_pose_in_imu = self.T_pose_to_velo @ self.last_pose_ref @ np.linalg.inv(self.T_pose_to_velo)
+            # last_pose_in_imu = self.last_pose_ref @ np.linalg.inv(self.T_pose_to_velo) 
+            last_pose_in_imu = self.imu_preinte_continuous_test
             init_imu_integrator['pos'] = torch.tensor(last_pose_in_imu[:3,3], dtype=self.dtype)
             init_imu_integrator['rot'] = pp.mat2SO3(torch.tensor(last_pose_in_imu[:3,:3], dtype=self.dtype))
             
@@ -465,8 +471,7 @@ class SLAMDataset(Dataset):
             rot_imu_preinte = state['rot'].squeeze(0) 
             vel_imu_preinte = state['vel'].squeeze(0)
             self.last_imu_integrator_vel = vel_imu_preinte[-1,:] # last item
-            # # self.imu_preinte_tran = np.eye(4)
-            # # cur_pose_init_guess = self.last_pose_ref @ self.imu_preinte_tran
+
             # Convert tensors back: transform to lidar coord; S03; initial guess
             pos_imu_preinte_np = pos_imu_preinte[-1,:].cpu().numpy() #last output
             rot_imu_preinte_np = rot_imu_preinte[-1,:].matrix().cpu().numpy() # pypose.SO3 -> rot
@@ -475,11 +480,13 @@ class SLAMDataset(Dataset):
             cur_preinte_inimu[:3,3] = pos_imu_preinte_np
             cur_preinte_inimu[:3,:3] = rot_imu_preinte_np
 
+            self.imu_preinte_continuous_test = cur_preinte_inimu
+
             # cur_pose_init_guess = self.T_pose_to_velo @ cur_preinte_inimu # in lidar frame, local
-            cur_pose_init_guess =  np.linalg.inv(self.T_pose_to_velo) @ last_pose_in_imu @ self.T_pose_to_velo # @ self.T_pose_to_velo  # @ np.linalg.inv(self.T_pose_to_velo)
+            # cur_pose_init_guess =  cur_preinte_inimu @ self.T_pose_to_velo # self.T_pose_to_velo @   # @ np.linalg.inv(self.T_pose_to_velo)
             
             # --- testing: IMU preinte vidual
-            if frame_id%10==0:
+            if frame_id % 10==0:
                 plt.figure(figsize=(5, 5))
                 
                 ax = plt.axes(projection='3d')
@@ -804,7 +811,17 @@ class SLAMDataset(Dataset):
             o3d.t.io.write_point_cloud(os.path.join(run_path, "map", "merged_point_cloud.ply"), map_out_o3d)
 
 
-    
+def find_closest_timestamp_index(target_timestamp, sorted_timestamps):
+    # Use searchsorted to find the insertion point
+    idx = np.searchsorted(sorted_timestamps, target_timestamp, side='left')
+    # Determine the closest index by checking boundaries
+    if idx == 0:
+        return 0
+    else:
+        # Check if the target timestamp is closer to the current index or the previous index
+        before = abs(sorted_timestamps[idx - 1] - target_timestamp)
+        after = abs(sorted_timestamps[idx] - target_timestamp)
+        return idx - 1 if before <= after else idx
 
 
 def loadTimestamps(ts_dir):
