@@ -73,7 +73,7 @@ def run_pin_slam():
     mesher = Mesher(config, neural_points, geo_mlp, sem_mlp, color_mlp)
 
     # pose graph manager (for back-end optimization) initialization
-    pgm = PoseGraphManager(config)
+    pgm = PoseGraphManager(config, dataset)
     if config.pgo_on:      
         if dataset.gt_pose_provided: 
             pgm.add_pose_prior(0, dataset.poses_ref[config.begin_frame], fixed=True)
@@ -159,9 +159,9 @@ def run_pin_slam():
                 # --- between factor               
                 pgm.add_odometry_factor(used_frame_id, used_frame_id-1, dataset.last_odom_tran, cov = cur_edge_cov) # T_p<-c 
                 pgm.estimate_drift(dataset.travel_dist, used_frame_id) # estimate the current drift
-                # --- prior factor, default off
+                # --- prior factor, default off （TODO just the initial frame）
                 if config.pgo_with_pose_prior: # add pose prior
-                    pgm.add_pose_prior(used_frame_id, dataset.pgo_poses[used_frame_id])
+                    pgm.add_pose_prior(used_frame_id, dataset.pgo_poses[used_frame_id]) 
             
                 # --- optimization & update
                 pgm.optimize_pose_graph()

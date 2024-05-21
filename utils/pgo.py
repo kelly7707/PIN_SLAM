@@ -7,11 +7,14 @@ import numpy as np
 import gtsam
 import matplotlib.pyplot as plt
 from rich import print
+import datetime as dt
+import os
 
 from utils.config import Config
+from dataset.slam_dataset import SLAMDataset
     
 class PoseGraphManager:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, dataset: SLAMDataset):
 
         self.config = config
 
@@ -47,6 +50,131 @@ class PoseGraphManager:
         self.drift_radius = 0.0 # m
         self.pgo_count = 0
 
+        self.imu_Preintegration_init(dataset)
+
+    def imu_Preintegration_init(self, dataset: SLAMDataset):
+        # source gtsam.CombinedImuFactorExample.py
+        self.GRAVITY = 9.81
+        params = gtsam.PreintegrationCombinedParams.MakeSharedD(self.GRAVITY) # TODO OXTS coordinates are defined as x = forward, y = right, z = down
+        
+        self.accBias, self.gyroBias, accel_sigma, gyro_sigma = self.imu_calibration(dataset)
+        self.imu_bias = gtsam.imuBias.ConstantBias(self.accBias, self.gyroBias)
+        # Some arbitrary noise sigmas
+        # gyro_sigma = 1e-3
+        # accel_sigma = 1e-3
+        I_3x3 = np.eye(3)
+        params.setGyroscopeCovariance(gyro_sigma**2 * I_3x3)
+        params.setAccelerometerCovariance(accel_sigma**2 * I_3x3)
+        params.setIntegrationCovariance(1e-7**2 * I_3x3)
+
+        self.pim = gtsam.PreintegratedCombinedMeasurements(params, self.imu_bias)
+
+    # --- IMU
+    def preintegration(self, acc, gyro, dts, last_pose, cur_id: int):
+        #
+        for i,dt in enumerate(dts):
+            # self.pim.integrate() # https://github.com/borglab/gtsam/blob/0fee5cb76e7a04b590ff0dc1051950da5b265340/python/gtsam/examples/PreintegrationExample.py#L159C16-L159C70 
+            self.pim.integrateMeasurement(acc[i], gyro[i], dt) # https://github.com/borglab/gtsam/blob/4abef9248edc4c49943d8fd8a84c028deb486f4c/python/gtsam/examples/CombinedImuFactorExample.py#L175C12-L177C74 
+        # preintegration
+        initial_state = gtsam.NavState(
+            last_pose,
+            self.velocity) # https://github.com/borglab/gtsam/blob/4abef9248edc4c49943d8fd8a84c028deb486f4c/python/gtsam/examples/CombinedImuFactorExample.py#L164C9-L168C46 
+        imu_prediction = self.pim.predict(initial_state, self.imu_bias)
+        predicted_pose = imu_prediction.pose()
+        self.velocity = imu_prediction.velocity()
+
+        self.graph_initials.insert(gtsam.symbol('v', cur_id), self.velocity)
+        self.graph_initials.insert(gtsam.symbol('b', cur_id),  ) # https://github.com/borglab/gtsam/blob/4abef9248edc4c49943d8fd8a84c028deb486f4c/python/gtsam/examples/CombinedImuFactorExample.py#L219C17-L221C55 
+
+        
+    
+    def add_combined_IMU_factor(self,cur_id: int, last_id: int): 
+        #
+        self.graph_factors.add(gtsam.CombinedImuFactor(gtsam.symbol('x', last_id), gtsam.symbol('v', last_id), gtsam.symbol('x', cur_id),
+                                gtsam.symbol('v', cur_id), gtsam.symbol('b', last_id), gtsam.symbol('b', cur_id), self.pim))
+    
+    def imu_calibration(self, dataset: SLAMDataset, imu_calibration_steps=30, imu_calibration_time = 3.0, visual=False):
+        #
+        num_samples = 0
+        gyro_avg = np.zeros(3)
+        accel_avg = np.zeros(3)
+
+        ang_vel_list = []
+        lin_acc_list = []
+        timestamps = []
+
+        # for idx in range(int(10*imu_calibration_time)):
+        #     if dataset.ts_rawimu[idx].timestamp() - dataset.ts_rawimu[0].timestamp() < imu_calibration_time:
+        
+        for idx in range(imu_calibration_steps):
+            num_samples+=1
+
+            raw_imu_filename = os.path.join(self.config.raw_imu_path, 'data', f'{idx:010d}.txt') #w-17:20, a-11:14
+            raw_imu = np.loadtxt(raw_imu_filename)
+            lin_acc = raw_imu[11:14]
+            ang_vel = raw_imu[17:20]
+
+            gyro_avg += ang_vel
+            accel_avg += lin_acc
+
+            ang_vel_list.append(ang_vel)
+            lin_acc_list.append(lin_acc)
+            timestamps.append(dataset.ts_rawimu[idx].timestamp())
+
+        gyro_avg /= num_samples
+        accel_avg /= num_samples
+        grav_vec = np.array([0, 0, self.GRAVITY])
+        
+        accBias = accel_avg - grav_vec
+        gyroBias = gyro_avg
+
+        ang_vel_array = np.array(ang_vel_list)
+        lin_acc_array = np.array(lin_acc_list)
+        timestamps = np.array(timestamps)
+        # Calculate max-min range for sigma initialization
+        gyro_sigma = (ang_vel_array.max(axis=0) - ang_vel_array.min(axis=0)) / 2
+        accel_sigma = (lin_acc_array.max(axis=0) - lin_acc_array.min(axis=0)) / 2
+        
+        # V- Plotting the IMU data
+        if visual:            
+            fig, axs = plt.subplots(2, 1, figsize=(10, 8))
+            # Gyroscope data
+            axs[0].plot(timestamps, ang_vel_array[:, 0], label='Gyro X', color='r')
+            axs[0].plot(timestamps, ang_vel_array[:, 1], label='Gyro Y', color='g')
+            axs[0].plot(timestamps, ang_vel_array[:, 2], label='Gyro Z', color='b')
+            axs[0].axhline(gyroBias[0], color='r', linestyle='--', label='Bias X')
+            axs[0].axhline(gyroBias[1], color='g', linestyle='--', label='Bias Y')
+            axs[0].axhline(gyroBias[2], color='b', linestyle='--', label='Bias Z')
+            axs[0].set_title('Gyroscope Data')
+            axs[0].set_xlabel('Time [s]')
+            axs[0].set_ylabel('Angular Velocity [rad/s]')
+            axs[0].legend()
+            axs[0].grid(True)
+            # Display gyro sigmas on the plot
+            axs[0].text(0.05, 0.95, f'Gyro Sigma X: {gyro_sigma[0]:.6f}\nGyro Sigma Y: {gyro_sigma[1]:.6f}\nGyro Sigma Z: {gyro_sigma[2]:.6f}',
+                    transform=axs[0].transAxes, fontsize=10, verticalalignment='top')
+            # Accelerometer data
+            axs[1].plot(timestamps, lin_acc_array[:, 0], label='Accel X', color='r')
+            axs[1].plot(timestamps, lin_acc_array[:, 1], label='Accel Y', color='g')
+            axs[1].plot(timestamps, lin_acc_array[:, 2], label='Accel Z', color='b')
+            axs[1].axhline(accBias[0], color='r', linestyle='--', label='Bias X + Gravity')
+            axs[1].axhline(accBias[1], color='g', linestyle='--', label='Bias Y')
+            axs[1].axhline(accBias[2] + self.GRAVITY, color='b', linestyle='--', label='Bias Z')
+            axs[1].set_title('Accelerometer Data')
+            axs[1].set_xlabel('Time [s]')
+            axs[1].set_ylabel('Linear Acceleration [m/s^2]')
+            axs[1].legend()
+            axs[1].grid(True)
+            # Display accel sigmas on the plot
+            axs[1].text(0.05, 0.95, f'Accel Sigma X: {accel_sigma[0]:.6f}\nAccel Sigma Y: {accel_sigma[1]:.6f}\nAccel Sigma Z: {accel_sigma[2]:.6f}',
+                    transform=axs[1].transAxes, fontsize=10, verticalalignment='top')
+
+            plt.tight_layout()
+            plt.show()
+
+        return accBias, gyroBias, accel_sigma, gyro_sigma
+    
+    
     def add_frame_node(self, frame_id, init_pose):
         """create frame pose node and set pose initial guess  
         Args:
@@ -56,6 +184,7 @@ class PoseGraphManager:
         self.curr_node_idx = frame_id # make start with 0
         if not self.graph_initials.exists(gtsam.symbol('x', frame_id)): # create if not yet exists
             self.graph_initials.insert(gtsam.symbol('x', frame_id), gtsam.Pose3(init_pose))
+            # v b 
         
     def add_pose_prior(self, frame_id: int, prior_pose: np.ndarray, fixed: bool = False):
         """add pose prior unary factor  
@@ -97,28 +226,8 @@ class PoseGraphManager:
                                                 gtsam.symbol('x', cur_id),  #t
                                                 gtsam.Pose3(odom_transform),  # T_prev<-cur
                                                 cov_model))  # NOTE: add robust kernel
-        
-
-    def add_combined_IMU_factor(self,cur_id: int, last_id: int): # TODO
-        # TODO: initialization
-        accBias = 
-        gyroBias = 
-        bias = gtsam.imuBias.ConstantBias(accBias, gyroBias)
-
-        # source gtsam.CombinedImuFactorExample.py
-        GRAVITY = 9.81
-        params = gtsam.PreintegrationCombinedParams.MakeSharedU(GRAVITY) # TODO up or down?
-        # Some arbitrary noise sigmas
-        gyro_sigma = 1e-3
-        accel_sigma = 1e-3
-        I_3x3 = np.eye(3)
-        params.setGyroscopeCovariance(gyro_sigma**2 * I_3x3)
-        params.setAccelerometerCovariance(accel_sigma**2 * I_3x3)
-        params.setIntegrationCovariance(1e-7**2 * I_3x3)
-
-        pim = 
-        self.graph_factors.add(gtsam.CombinedImuFactor(gtsam.symbol('x', last_id), gtsam.symbol('v', last_id), gtsam.symbol('x', cur_id),
-                                gtsam.symbol('v', cur_id), gtsam.symbol('b', last_id), gtsam.symbol('b', cur_id), pim))
+        # TODO: V,B
+    
     
     def add_loop_factor(self, cur_id: int, loop_id: int, loop_transform: np.ndarray, cov = None):
         """add a loop closure factor between two pose nodes
@@ -177,6 +286,9 @@ class PoseGraphManager:
 
         self.pgo_count += 1
 
+
+        self.pim.resetIntegration()
+
     def write_g2o(self, out_file):
         gtsam.writeG2o(self.graph_factors, self.graph_initials, out_file)
 
@@ -232,6 +344,9 @@ class PoseGraphManager:
             plt.show()
 
 
+    
+    
+
 def get_node_pose(graph, idx):
 
     pose = graph.atPose3(gtsam.symbol('x', idx))
@@ -251,3 +366,5 @@ def get_node_cov(marginals, idx):
     # pose_se3[:3, :3] = pose.rotation().matrix()
 
     return cov
+
+
