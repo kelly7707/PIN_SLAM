@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from rich import print
 import datetime as dt
 import os
+from scipy.spatial.transform import Rotation as R
 
 from utils.config import Config
 from dataset.slam_dataset import SLAMDataset
@@ -55,9 +56,9 @@ class PoseGraphManager:
     def imu_Preintegration_init(self, dataset: SLAMDataset):
         # source gtsam.CombinedImuFactorExample.py
         self.GRAVITY = 9.81 
-        params = gtsam.PreintegrationCombinedParams.MakeSharedD(self.GRAVITY) # OXTS coordinates are defined as x = forward, y = right, z = down
+        params = gtsam.PreintegrationCombinedParams.MakeSharedU(self.GRAVITY) # OXTS coordinates are defined as x = forward, y = right, z = down
         
-        self.accBias, self.gyroBias, self.accel_sigma, self.gyro_sigma = self.imu_calibration(dataset)
+        self.imu_calib_initial_pose, self.accBias, self.gyroBias, self.accel_sigma, self.gyro_sigma = self.imu_calibration(dataset)
         self.imu_bias = gtsam.imuBias.ConstantBias(self.accBias, self.gyroBias)
         
         # Some arbitrary noise sigmas
@@ -109,7 +110,7 @@ class PoseGraphManager:
         self.graph_factors.add(gtsam.CombinedImuFactor(gtsam.symbol('x', last_id), gtsam.symbol('v', last_id), gtsam.symbol('x', cur_id),
                                 gtsam.symbol('v', cur_id), gtsam.symbol('b', last_id), gtsam.symbol('b', cur_id), self.pim))
     
-    def imu_calibration(self, dataset: SLAMDataset, imu_calibration_steps=30, imu_calibration_time = 3.0, visual=False):
+    def imu_calibration(self, dataset: SLAMDataset, imu_calibration_steps=30, visual=False):
         #
         num_samples = 0
         gyro_avg = np.zeros(3)
@@ -141,8 +142,22 @@ class PoseGraphManager:
         accel_avg /= num_samples
         grav_vec = np.array([0, 0, self.GRAVITY])
         
-        accBias = accel_avg - grav_vec
-        gyroBias = gyro_avg
+        # Bias computation using average
+        gyro_bias = gyro_avg
+        accel_bias = accel_avg - grav_vec
+
+        # Calculate initial orientation from gravity
+        grav_dir = accel_bias / np.linalg.norm(accel_bias)
+        grav_target = np.array([0, 0, 1])  # Assuming Z-up coordinate system
+        initial_orientation = R.align_vectors([grav_target], [grav_dir])[0]
+        calibrated_initial_pose = np.eye(4)
+        calibrated_initial_pose[:3, :3] = initial_orientation.as_matrix()
+
+        # Compute biases adjusted by initial pose
+        # grav_corrected = np.dot(calibrated_initial_pose[:3, :3].T, np.array([0, 0, self.GRAVITY]))
+        grav_corrected = initial_orientation.apply(np.array([0, 0, self.GRAVITY]))
+        accel_bias = accel_avg - grav_corrected
+        gyro_bias = gyro_avg
 
         ang_vel_array = np.array(ang_vel_list)
         lin_acc_array = np.array(lin_acc_list)
@@ -158,9 +173,9 @@ class PoseGraphManager:
             axs[0].plot(timestamps, ang_vel_array[:, 0], label='Gyro X', color='r')
             axs[0].plot(timestamps, ang_vel_array[:, 1], label='Gyro Y', color='g')
             axs[0].plot(timestamps, ang_vel_array[:, 2], label='Gyro Z', color='b')
-            axs[0].axhline(gyroBias[0], color='r', linestyle='--', label='Bias X')
-            axs[0].axhline(gyroBias[1], color='g', linestyle='--', label='Bias Y')
-            axs[0].axhline(gyroBias[2], color='b', linestyle='--', label='Bias Z')
+            axs[0].axhline(gyro_bias[0], color='r', linestyle='--', label='Bias X')
+            axs[0].axhline(gyro_bias[1], color='g', linestyle='--', label='Bias Y')
+            axs[0].axhline(gyro_bias[2], color='b', linestyle='--', label='Bias Z')
             axs[0].set_title('Gyroscope Data')
             axs[0].set_xlabel('Time [s]')
             axs[0].set_ylabel('Angular Velocity [rad/s]')
@@ -173,9 +188,9 @@ class PoseGraphManager:
             axs[1].plot(timestamps, lin_acc_array[:, 0], label='Accel X', color='r')
             axs[1].plot(timestamps, lin_acc_array[:, 1], label='Accel Y', color='g')
             axs[1].plot(timestamps, lin_acc_array[:, 2], label='Accel Z', color='b')
-            axs[1].axhline(accBias[0], color='r', linestyle='--', label='Bias X + Gravity')
-            axs[1].axhline(accBias[1], color='g', linestyle='--', label='Bias Y')
-            axs[1].axhline(accBias[2] + self.GRAVITY, color='b', linestyle='--', label='Bias Z')
+            axs[1].axhline(accel_bias[0], color='r', linestyle='--', label='Bias X')
+            axs[1].axhline(accel_bias[1], color='g', linestyle='--', label='Bias Y')
+            axs[1].axhline(accel_bias[2] + self.GRAVITY, color='b', linestyle='--', label='Bias Z + Gravity')
             axs[1].set_title('Accelerometer Data')
             axs[1].set_xlabel('Time [s]')
             axs[1].set_ylabel('Linear Acceleration [m/s^2]')
@@ -188,7 +203,7 @@ class PoseGraphManager:
             plt.tight_layout()
             plt.show()
 
-        return accBias, gyroBias, accel_sigma, gyro_sigma # array(3)
+        return calibrated_initial_pose, gyro_bias, accel_bias, accel_sigma, gyro_sigma # array(3)
     
     def add_frame_node(self, frame_id, init_pose):
         """create frame pose node and set pose initial guess  
@@ -198,7 +213,10 @@ class PoseGraphManager:
         """
         self.curr_node_idx = frame_id # make start with 0
         if not self.graph_initials.exists(gtsam.symbol('x', frame_id)): # create if not yet exists
-            self.graph_initials.insert(gtsam.symbol('x', frame_id), gtsam.Pose3(init_pose))
+            if frame_id == 0:
+                self.graph_initials.insert(gtsam.symbol('x', frame_id), gtsam.Pose3(self.imu_calib_initial_pose))
+            else:
+                self.graph_initials.insert(gtsam.symbol('x', frame_id), gtsam.Pose3(init_pose))
             # v b 
         if not self.graph_initials.exists(gtsam.symbol('v', frame_id)):
             self.graph_initials.insert(gtsam.symbol('v', frame_id), self.velocity)
