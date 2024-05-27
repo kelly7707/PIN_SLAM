@@ -26,6 +26,7 @@ from utils.config import Config
 from utils.tools import get_time, voxel_down_sample_torch, deskewing,deskewing_IMU, transform_torch, plot_timing_detail, tranmat_close_to_identity
 from utils.semantic_kitti_utils import *
 from eval.eval_traj_utils import *
+# from utils.pgo import PoseGraphManager
 
 import pykitti
 import datetime as dt
@@ -63,7 +64,7 @@ class SLAMDataset(Dataset):
             self.odom_poses = []
             
         self.pgo_poses = None
-        if config.pgo_on:
+        if config.pgo_on or config.imu_pgo:
             self.pgo_poses = []
 
         self.gt_poses = None
@@ -189,6 +190,7 @@ class SLAMDataset(Dataset):
 
         # testing IMU
         self.vidual_poses = []
+        self.visual_lidar_poses = []
         self.vidual_gtposes = []
 
     def read_frame_ros(self, msg, ts_field_name = "time", ts_col=3):
@@ -270,18 +272,11 @@ class SLAMDataset(Dataset):
             # # cur_sync_imu = np.loadtxt(sync_imu_filename) # imu data at current frame 
             # # self.cur_sync_imu_torch = torch.tensor(cur_sync_imu, device=self.device, dtype=self.dtype)
             
-
-            # # ts_pc v.s. ts_syncimu, syncimu may ignore some frames (with little movement)
-            # self.ts_last_imu = self.ts_syncimu[frame_id-1]
-            # self.ts_cur_imu = self.ts_syncimu[frame_id]
-            # assert np.abs((self.ts_last_imu-self.ts_pc[frame_id-1]).total_seconds())<0.01
-            # # interpolate raw imu in between - Find indices for current frame
-            # start_index_syncraw = np.searchsorted(self.ts_rawimu, self.ts_last_imu, side='left')
-            # end_index_syncraw = np.searchsorted(self.ts_rawimu, self.ts_cur_imu, side='left') # frame i+1, 'right'next ts after framei+1 
-            
             start_index = find_closest_timestamp_index(self.ts_pc[frame_id-1],self.ts_rawimu)
             end_index = find_closest_timestamp_index(self.ts_pc[frame_id],self.ts_rawimu)
             
+            # if frame_id> 100: start_idx = 1085; >0: 41
+            # print('------------testing: index of turning point-----------',start_index)
             self.read_raw_imu(start_index, end_index)
             # frame_id * 10 
 
@@ -300,41 +295,85 @@ class SLAMDataset(Dataset):
             # cur_raw_imu = np.loadtxt(raw_imu_filename)
             # all_imu_data.append(cur_raw_imu)
         
-        # if all_imu_data:
-        #     imu_data_numpy = np.stack(all_imu_data)
-        #     # Convert the numpy array to a PyTorch tensor
-        #     imu_data_tensor = torch.from_numpy(imu_data_numpy)
-        # else:
-        #     # Create an empty tensor if no files were read
-        #     imu_data_tensor = torch.tensor([])
-        
         self.oxts_raw_imu_curinterval = pykitti.utils.load_oxts_packets_and_poses(all_imu_filenames)
         self.ts_raw_imu_curinterval = self.ts_rawimu[start_index:end_index+1] #[frame_i, frame_i+1]
         self.seq_len = len(self.ts_raw_imu_curinterval) - 1
 
         self.imu_curinter = {}
-        self.imu_curinter['dt'] = torch.tensor([dt.datetime.timestamp(self.ts_raw_imu_curinterval[i+1]) -
+        self.imu_curinter['dt'] = np.array([dt.datetime.timestamp(self.ts_raw_imu_curinterval[i+1]) -
                                 dt.datetime.timestamp(self.ts_raw_imu_curinterval[i])
-                                    for i in range(self.seq_len)]).unsqueeze(1) # torch.size([n,1])
-        self.imu_curinter['gyro'] = torch.tensor([[self.oxts_raw_imu_curinterval[i].packet.wx,
+                                    for i in range(self.seq_len)]) # torch.size([n,1])
+        self.imu_curinter['gyro'] = np.array([[self.oxts_raw_imu_curinterval[i].packet.wx,
                                    self.oxts_raw_imu_curinterval[i].packet.wy,
                                    self.oxts_raw_imu_curinterval[i].packet.wz]
                                    for i in range(self.seq_len)]) # torch.size([n,3])
-        self.imu_curinter['acc'] = torch.tensor([[self.oxts_raw_imu_curinterval[i].packet.ax,
+        self.imu_curinter['acc'] = np.array([[self.oxts_raw_imu_curinterval[i].packet.ax,
                                   self.oxts_raw_imu_curinterval[i].packet.ay,
                                   self.oxts_raw_imu_curinterval[i].packet.az]
                                   for i in range(self.seq_len)])
         # # TODO: understand the gt... and Tw_imu?
-        # self.imu_curinter['gt_rot'] = pp.euler2SO3(torch.tensor([[self.oxts_raw_imu_curinterval[i].packet.roll,
-        #                                           self.oxts_raw_imu_curinterval[i].packet.pitch,
-        #                                           self.oxts_raw_imu_curinterval[i].packet.yaw]
-        #                                           for i in range(self.seq_len)]))
-        # self.imu_curinter['gt_vel'] = self.imu_curinter['gt_rot'] @ torch.tensor([[self.oxts_raw_imu_curinterval[i].packet.vf,
-        #                                            self.oxts_raw_imu_curinterval[i].packet.vl,
-        #                                            self.oxts_raw_imu_curinterval[i].packet.vu]
-        #                                            for i in range(self.seq_len)])
-        # self.imu_curinter['gt_pos'] = torch.tensor(np.array([self.oxts_raw_imu_curinterval[i].T_w_imu[0:3, 3]
-        #                                      for i in range(self.seq_len)]))
+        self.imu_curinter['gt_rot'] = pp.euler2SO3(torch.tensor([[self.oxts_raw_imu_curinterval[i].packet.roll,
+                                                  self.oxts_raw_imu_curinterval[i].packet.pitch,
+                                                  self.oxts_raw_imu_curinterval[i].packet.yaw]
+                                                  for i in range(self.seq_len)]))
+        self.imu_curinter['gt_vel'] = self.imu_curinter['gt_rot'] @ torch.tensor([[self.oxts_raw_imu_curinterval[i].packet.vf,
+                                                   self.oxts_raw_imu_curinterval[i].packet.vl,
+                                                   self.oxts_raw_imu_curinterval[i].packet.vu]
+                                                   for i in range(self.seq_len)])
+        print('-------------------', self.imu_curinter['gt_vel'][:1])
+        self.imu_curinter['gt_pos'] = torch.tensor(np.array([self.oxts_raw_imu_curinterval[i].T_w_imu[0:3, 3]
+                                             for i in range(self.seq_len)]))
+        
+        # # -- visual data & bias
+        # if start_index >=35:
+        #     gyro_data = self.imu_curinter['gyro']
+        #     acc_data = self.imu_curinter['acc']
+        #     timestamps = np.cumsum(self.imu_curinter['dt'])  # Accumulating the time differences to get the timestamps
+
+        #     gyroBias = np.mean(self.imu_curinter['gyro'], axis=0)
+        #     accBias = np.mean(self.imu_curinter['acc'], axis=0) - np.array([0, 0, 9.8])
+        #     gyro_sigma = (gyro_data.max(axis=0) - gyro_data.min(axis=0)) / 2
+        #     acc_sigma = (acc_data.max(axis=0) - acc_data.min(axis=0)) / 2
+        #     # Plotting the IMU data
+        #     fig, axs = plt.subplots(2, 1, figsize=(10, 8))
+        #     # Gyroscope data
+        #     axs[0].plot(timestamps, gyro_data[:, 0], label='Gyro X', color='r')
+        #     axs[0].plot(timestamps, gyro_data[:, 1], label='Gyro Y', color='g')
+        #     axs[0].plot(timestamps, gyro_data[:, 2], label='Gyro Z', color='b')
+        #     axs[0].axhline(gyroBias[0], color='r', linestyle='--', label='Bias X')
+        #     axs[0].axhline(gyroBias[1], color='g', linestyle='--', label='Bias Y')
+        #     axs[0].axhline(gyroBias[2], color='b', linestyle='--', label='Bias Z')
+        #     axs[0].set_title('Gyroscope Data')
+        #     axs[0].set_xlabel('Time [s]')
+        #     axs[0].set_ylabel('Angular Velocity [rad/s]')
+        #     axs[0].legend()
+        #     axs[0].grid(True)
+        #     # Display gyro sigmas on the plot
+        #     axs[0].text(0.05, 0.95, f'Gyro Bias X: {gyroBias[0]:.6f}\nGyro Bias Y: {gyroBias[1]:.6f}\nGyro Bias Z: {gyroBias[2]:.6f}\n'
+        #                             f'Gyro Sigma X: {gyro_sigma[0]:.6f}\nGyro Sigma Y: {gyro_sigma[1]:.6f}\nGyro Sigma Z: {gyro_sigma[2]:.6f}',
+        #                 transform=axs[0].transAxes, fontsize=10, verticalalignment='top')
+
+        #     # Accelerometer data
+        #     axs[1].plot(timestamps, acc_data[:, 0], label='Accel X', color='r')
+        #     axs[1].plot(timestamps, acc_data[:, 1], label='Accel Y', color='g')
+        #     axs[1].plot(timestamps, acc_data[:, 2], label='Accel Z', color='b')
+        #     axs[1].axhline(accBias[0], color='r', linestyle='--', label='Bias X + Gravity')
+        #     axs[1].axhline(accBias[1], color='g', linestyle='--', label='Bias Y')
+        #     axs[1].axhline(accBias[2] + 9.8, color='b', linestyle='--', label='Bias Z')
+        #     axs[1].set_title('Accelerometer Data')
+        #     axs[1].set_xlabel('Time [s]')
+        #     axs[1].set_ylabel('Linear Acceleration [m/s^2]')
+        #     axs[1].legend()
+        #     axs[1].grid(True)
+        #     # Display accel sigmas on the plot
+        #     axs[1].text(0.05, 0.95, f'Accel Bias X: {accBias[0]:.6f}\nAccel Bias Y: {accBias[1]:.6f}\nAccel Bias Z: {accBias[2]:.6f}\n'
+        #                             f'Accel Sigma X: {acc_sigma[0]:.6f}\nAccel Sigma Y: {acc_sigma[1]:.6f}\nAccel Sigma Z: {acc_sigma[2]:.6f}',
+        #                 transform=axs[1].transAxes, fontsize=10, verticalalignment='top')
+
+
+        #     plt.tight_layout()
+        #     plt.show()
+
 
     
     # point-wise timestamp is now only used for motion undistortion (deskewing)
@@ -364,7 +403,7 @@ class SLAMDataset(Dataset):
                             print("HESAI point cloud deskewed")
 
 
-    def preprocess_frame(self, frame_id=0):
+    def preprocess_frame(self, pgm, frame_id=0): #: PoseGraphManager
 
         T1 = get_time()
 
@@ -419,12 +458,13 @@ class SLAMDataset(Dataset):
         if self.processed_frame == 0: # initialize the first frame, no tracking yet
             if self.config.track_on:
                 self.odom_poses.append(self.cur_pose_ref)
-            if self.config.pgo_on:
-                self.pgo_poses.append(self.cur_pose_ref)
+            if self.config.pgo_on or self.config.imu_pgo:
+                self.pgo_poses.append(self.cur_pose_ref)   
             if self.gt_pose_provided and frame_id > 0: # not start with the first frame, default false
                 self.last_odom_tran = inv(self.poses_ref[frame_id-1]) @ self.cur_pose_ref # T_last<-cur
             self.travel_dist.append(0.)
             self.last_pose_ref = self.cur_pose_ref
+            self.estimated_pose_lidar = self.cur_pose_ref
             # # IMU frame0 initialization
             # # test imu preintegration (imu coord: x = forward, y = right, z = down)
             # init_imu_integrator['pos'] = torch.zeros(3) #wrong. + lidar to imu
@@ -434,7 +474,7 @@ class SLAMDataset(Dataset):
 
             # init_imu_integrator['vel'] = torch.zeros(3)
             # self.last_imu_integrator_vel = init_imu_integrator['vel']
-            # self.imu_preinte_continuous_test = np.eye(4)
+            self.imu_preinte_continuous_test = np.eye(4) 
 
         elif self.processed_frame > 0: 
             # pose initial guess
@@ -450,78 +490,66 @@ class SLAMDataset(Dataset):
                 cur_pose_init_guess = self.poses_ref[frame_id]
 
             
-            # #IMU--2 pose initial guess
-            # #  transform to imu frame; pyposeSO3 (self.last_pose_ref # lidar, local)
-            # last_pose_in_imu =  self.last_pose_ref @ self.T_pose_to_velo # @ np.linalg.inv(self.T_pose_to_velo) # @ self.T_pose_to_velo # TODO: order?
-            # last_pose_in_imu = self.last_pose_ref @ np.linalg.inv(self.T_pose_to_velo) 
-
-            # test imu preintegration (world coord: east-north-up / x = forward, y = left, z = up)
-            if frame_id == 1:
-                init_imu_integrator['vel'] = self.imu_curinter['gt_vel'][:1]
-                init_imu_integrator['pos'] = self.imu_curinter['gt_pos'][:1]
-                init_imu_integrator['rot'] = self.imu_curinter['gt_rot'][:1]
-            else:
-                last_pose_in_imu = self.imu_preinte_continuous_test
-                init_imu_integrator['pos'] = torch.tensor(last_pose_in_imu[:3,3], dtype=self.dtype)
-                init_imu_integrator['rot'] = pp.mat2SO3(torch.tensor(last_pose_in_imu[:3,:3], dtype=self.dtype))
+            # # test imu preintegration (world coord: east-north-up / x = forward, y = left, z = up)
+            # if frame_id == 1:
+            #     # init_imu_integrator['vel'] = self.imu_curinter['gt_vel'][:1]
+            #     init_imu_integrator['pos'] = self.imu_curinter['gt_pos'][:1]
+            #     init_imu_integrator['rot'] = self.imu_curinter['gt_rot'][:1]
+            #     self.imu_preinte_continuous_test[:3,:3] = init_imu_integrator['rot'].matrix()
+            #     self.imu_preinte_continuous_test[:3,3] = init_imu_integrator['pos'].numpy()
+            # else:
+                # last_pose_in_imu = self.imu_preinte_continuous_test
+                # init_imu_integrator['pos'] = torch.tensor(last_pose_in_imu[:3,3], dtype=self.dtype)
+                # init_imu_integrator['rot'] = pp.mat2SO3(torch.tensor(last_pose_in_imu[:3,:3], dtype=self.dtype))
                 
-                init_imu_integrator['vel'] = self.last_imu_integrator_vel
+                # init_imu_integrator['vel'] = self.last_imu_integrator_vel
 
 
+            # # IMU--2 pose initial guess
+            # # transform to imu frame
+            last_pose_w2imu = self.last_pose_ref @ np.linalg.inv(self.T_pose_to_velo) # TODO: order?
+            # last_pose_w2imu = self.imu_preinte_continuous_test
+            initial_guess_w2imu = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=last_pose_w2imu, cur_id=self.processed_frame)
+            initial_guess_w2lidar = initial_guess_w2imu @ self.T_pose_to_velo
             
-            integrator = pp.module.IMUPreintegrator(init_imu_integrator['pos'], init_imu_integrator['rot'], init_imu_integrator['vel'],
-                                                reset=False).to(self.device)
-            # print('--------------------',self.imu_curinter['dt'].shape)
-            # print(len(self.imu_curinter['dt'].shape))
-            # print(len(self.imu_curinter['acc'].shape))
-            # print(len(self.imu_curinter['gyro'].shape))
-            state = integrator(dt=self.imu_curinter['dt'].to(self.device) , gyro=self.imu_curinter['gyro'].to(self.device),
-                               acc=self.imu_curinter['acc'].to(self.device)) #, TODO: rot=data['init_rot']) init_rot gt_rot?
-            # # # state = integrator(ang,acc,dt)
-            pos_imu_preinte = state['pos'].squeeze(0) # [1,n,3] -> [n,3] , [-1,:]or squeeze
-            rot_imu_preinte = state['rot'].squeeze(0) 
-            vel_imu_preinte = state['vel'].squeeze(0)
+  
+            self.imu_preinte_continuous_test = initial_guess_w2imu
+            cur_pose_init_guess = initial_guess_w2lidar
 
-            self.last_imu_integrator_vel = vel_imu_preinte[-1,:] # last item
-            # Convert tensors back: transform to lidar coord; S03; initial guess
-            pos_imu_preinte_np = pos_imu_preinte[-1,:].cpu().numpy() #last output
-            rot_imu_preinte_np = rot_imu_preinte[-1,:].matrix().cpu().numpy() # pypose.SO3 -> rot
-
-            cur_preinte_inimu = np.eye(4) 
-            cur_preinte_inimu[:3,3] = pos_imu_preinte_np
-            cur_preinte_inimu[:3,:3] = rot_imu_preinte_np
-
-            self.imu_preinte_continuous_test = cur_preinte_inimu
-
-            # cur_pose_init_guess = self.T_pose_to_velo @ cur_preinte_inimu # in lidar frame, local
-            # cur_pose_init_guess =  cur_preinte_inimu @ self.T_pose_to_velo # self.T_pose_to_velo @   # @ np.linalg.inv(self.T_pose_to_velo)
-            
             # --- testing: IMU preinte vidual
-            if frame_id % 20==0:
-                plt.figure(figsize=(5, 5))
-                
-                
-                poses = state['pos'][-1,...].cpu().numpy() # output, wrt. initial imu frame
-                # poses = self.T_pose_to_velo @ cur_preinte_inimu.cpu().numpy()
-                # poses_gt = self.imu_curinter['gt_pos'].cpu().numpy()
-
-                self.vidual_poses.append(poses)
-                # self.vidual_gtposes.append(poses_gt)
-                visual_poses_np = np.concatenate(self.vidual_poses, axis=0)
-                # visual_gtposes_np = np.concatenate(self.vidual_gtposes, axis=0)
+            poses = initial_guess_w2lidar  #initial_guess_w2imu # initial_guess_w2lidar # output, wrt. initial imu frame
+            self.vidual_poses.append(poses[:3, 3])
+            self.visual_lidar_poses.append(self.estimated_pose_lidar[:3, 3])
+            # self.vidual_gtposes.append(poses_gt)
+            # visual_poses_np = np.concatenate(self.vidual_poses, axis=0)
+            # visual_gtposes_np = np.concatenate(self.vidual_gtposes, axis=0)
+            visual_poses_np = np.array(self.vidual_poses)
+            visual_poses_lidar_np = np.array(self.visual_lidar_poses)
+            
+            
+            if frame_id % 40==0:
+                plt.figure(figsize=(5, 5))                
 
                 # ax = plt.axes(projection='3d')
                 # ax.plot3D(visual_poses_np[:,0], visual_poses_np[:,1], visual_poses_np[:,2], 'b')
                 # # ax.plot3D(visual_gtposes_np[:,0], visual_gtposes_np[:,1], visual_gtposes_np[:,2], 'r')
 
                 plt.plot(visual_poses_np[:,0], visual_poses_np[:,1], 'b')  # Blue line for the trajectory
-    
-                
-                plt.title("PyPose IMU Integrator")
+                plt.plot(visual_poses_lidar_np[:,0], visual_poses_lidar_np[:,1], 'r')
+
+                plt.title("Gtsam IMU Integrator")
                 # plt.legend(["PyPose", "Ground Truth"])
-                figure = os.path.join('/home/zjw/master_thesis/visual/testing'+f'IMU preintegration_{frame_id}'+'.png')
+                figure = os.path.join('/home/zjw/master_thesis/visual/testing'+f'gtsam IMU preintegration_{frame_id}'+'.png')
                 plt.savefig(figure)
                 print("Saved to", figure)
+
+                # # -- 
+                # plt.figure(figsize=(5, 5)) 
+                # plt.plot(visual_poses_lidar_np[:,0], visual_poses_lidar_np[:,1], 'r')
+                # plt.title("Lidar IMU Integrator")
+                # figure = os.path.join('/home/zjw/master_thesis/visual/testing'+f'Lidar IMU preintegration_{frame_id}'+'.png')
+                # plt.savefig(figure)
+
 
 
             # --- pose initial guess tensor
@@ -592,7 +620,7 @@ class SLAMDataset(Dataset):
         else:
             self.stop_status = False
 
-        if self.config.pgo_on: # initialization the pgo pose
+        if self.config.pgo_on or self.config.imu_pgo: # initialization the pgo pose
             self.pgo_poses.append(self.cur_pose_ref) 
 
         if self.odom_poses is not None:
@@ -613,6 +641,7 @@ class SLAMDataset(Dataset):
             sys.exit("This function needs to be used from at least the second frame")
         
         self.last_pose_ref = self.cur_pose_ref # update for the next frame
+        self.estimated_pose_lidar = self.cur_pose_ref
 
         # deskewing (motion undistortion using the estimated transformation) for the sampled points for mapping
         # if self.config.deskew and not self.lose_track:

@@ -266,6 +266,7 @@ class Config:
         self.max_loop_dist: float = 8.0
     
         # pose graph optimization
+        self.imu_pgo: bool = True
         self.pgo_on: bool = False
         self.pgo_freq: int = 30 # frequency for detecting loop closure
         self.pgo_with_lm: bool = True # use lm or dogleg # lm seems to be better (why)
@@ -498,6 +499,8 @@ class Config:
             self.eigenvalue_check = config_args["tracker"].get("eigenvalue_check", True)
 
         # pgo
+        self.imu_pgo = config_args.get("imu_pgo", False)
+        
         if self.track_on:
             self.pgo_on = config_args.get("pgo", False) # only on if indicated
 

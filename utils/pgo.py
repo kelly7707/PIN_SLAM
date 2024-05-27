@@ -54,20 +54,28 @@ class PoseGraphManager:
 
     def imu_Preintegration_init(self, dataset: SLAMDataset):
         # source gtsam.CombinedImuFactorExample.py
-        self.GRAVITY = 9.81
-        params = gtsam.PreintegrationCombinedParams.MakeSharedD(self.GRAVITY) # TODO OXTS coordinates are defined as x = forward, y = right, z = down
+        self.GRAVITY = 9.81 
+        params = gtsam.PreintegrationCombinedParams.MakeSharedD(self.GRAVITY) # OXTS coordinates are defined as x = forward, y = right, z = down
         
-        self.accBias, self.gyroBias, accel_sigma, gyro_sigma = self.imu_calibration(dataset)
+        self.accBias, self.gyroBias, self.accel_sigma, self.gyro_sigma = self.imu_calibration(dataset)
         self.imu_bias = gtsam.imuBias.ConstantBias(self.accBias, self.gyroBias)
+        
         # Some arbitrary noise sigmas
-        # gyro_sigma = 1e-3
-        # accel_sigma = 1e-3
+        self.gyro_sigma = np.ones(3)*1e-3
+        self.accel_sigma = np.ones(3)*1e-3
+        # self.gyro_sigma = np.zeros(3)
+        # self.accel_sigma = np.zeros(3)
+
         I_3x3 = np.eye(3)
-        params.setGyroscopeCovariance(gyro_sigma**2 * I_3x3)
-        params.setAccelerometerCovariance(accel_sigma**2 * I_3x3)
-        params.setIntegrationCovariance(1e-7**2 * I_3x3)
+        params.setGyroscopeCovariance(self.gyro_sigma**2 * I_3x3)
+        params.setAccelerometerCovariance(self.accel_sigma**2 * I_3x3)
+        params.setIntegrationCovariance(1e-6 * I_3x3)  # 1e-3**2 * I_3x3 # 1e-5 * I_3x3
+        # params.setBiasOmegaCovariance(1e-1**2 * I_3x3)
+        # params.setBiasAccCovariance(1e-1**2 * I_3x3)
 
         self.pim = gtsam.PreintegratedCombinedMeasurements(params, self.imu_bias)
+
+        self.velocity = np.array([0, 0, 0]) # np.array([ 0.0005, -0.0007, -0.0058])# np.array([0, 0, 0])
 
     # --- IMU
     def preintegration(self, acc, gyro, dts, last_pose, cur_id: int):
@@ -76,16 +84,24 @@ class PoseGraphManager:
             # self.pim.integrate() # https://github.com/borglab/gtsam/blob/0fee5cb76e7a04b590ff0dc1051950da5b265340/python/gtsam/examples/PreintegrationExample.py#L159C16-L159C70 
             self.pim.integrateMeasurement(acc[i], gyro[i], dt) # https://github.com/borglab/gtsam/blob/4abef9248edc4c49943d8fd8a84c028deb486f4c/python/gtsam/examples/CombinedImuFactorExample.py#L175C12-L177C74 
         # preintegration
+        # initial_rotation = gtsam.Rot3(last_pose[:3, :3])
+        # initial_translation = gtsam.Point3(last_pose[0, 3],last_pose[1, 3],last_pose[2, 3])
+        initial_pose = gtsam.Pose3(last_pose)
         initial_state = gtsam.NavState(
-            last_pose,
+            initial_pose,
             self.velocity) # https://github.com/borglab/gtsam/blob/4abef9248edc4c49943d8fd8a84c028deb486f4c/python/gtsam/examples/CombinedImuFactorExample.py#L164C9-L168C46 
         imu_prediction = self.pim.predict(initial_state, self.imu_bias)
-        predicted_pose = imu_prediction.pose()
+        predicted_pose = imu_prediction.pose() # w2imu
+
         self.velocity = imu_prediction.velocity()
 
         self.graph_initials.insert(gtsam.symbol('v', cur_id), self.velocity)
-        self.graph_initials.insert(gtsam.symbol('b', cur_id),  ) # https://github.com/borglab/gtsam/blob/4abef9248edc4c49943d8fd8a84c028deb486f4c/python/gtsam/examples/CombinedImuFactorExample.py#L219C17-L221C55 
-
+        self.graph_initials.insert(gtsam.symbol('b', cur_id), self.imu_bias) # TODO? What bias??? # https://github.com/borglab/gtsam/blob/4abef9248edc4c49943d8fd8a84c028deb486f4c/python/gtsam/examples/CombinedImuFactorExample.py#L219C17-L221C55 
+        
+        predicted_pose_homo = np.eye(4)
+        predicted_pose_homo[:3,:3] = predicted_pose.rotation().matrix()
+        predicted_pose_homo[:3,3] = predicted_pose.translation()
+        return predicted_pose_homo
         
     
     def add_combined_IMU_factor(self,cur_id: int, last_id: int): 
@@ -172,8 +188,7 @@ class PoseGraphManager:
             plt.tight_layout()
             plt.show()
 
-        return accBias, gyroBias, accel_sigma, gyro_sigma
-    
+        return accBias, gyroBias, accel_sigma, gyro_sigma # array(3)
     
     def add_frame_node(self, frame_id, init_pose):
         """create frame pose node and set pose initial guess  
@@ -185,6 +200,13 @@ class PoseGraphManager:
         if not self.graph_initials.exists(gtsam.symbol('x', frame_id)): # create if not yet exists
             self.graph_initials.insert(gtsam.symbol('x', frame_id), gtsam.Pose3(init_pose))
             # v b 
+        if not self.graph_initials.exists(gtsam.symbol('v', frame_id)):
+            self.graph_initials.insert(gtsam.symbol('v', frame_id), self.velocity)
+            assert frame_id == 0
+            # assert np.allclose(self.velocity, np.array([0.0, 0.0, 0.0])), "Velocity is not close to [0, 0, 0]"
+        if not self.graph_initials.exists(gtsam.symbol('b', frame_id)):
+            self.graph_initials.insert(gtsam.symbol('b', frame_id), self.imu_bias)
+            assert frame_id == 0
         
     def add_pose_prior(self, frame_id: int, prior_pose: np.ndarray, fixed: bool = False):
         """add pose prior unary factor  
@@ -207,6 +229,38 @@ class PoseGraphManager:
                                             gtsam.Pose3(prior_pose), 
                                             cov_model))
 
+    # https://github.com/borglab/gtsam/blob/264a240094d62a56c3b2d364c8c08fd158e898f7/cython/gtsam/examples/ImuFactorExample2.py#L106C5-L125C45
+    def add_velocity_prior(self, frame_id: int, fixed: bool = False):
+        """Add velocity prior unary factor"""
+        if fixed:
+            cov_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([1e-6]*3))
+        else:
+            vel_sigma = self.drift_radius + 5e-4 #1e-4 TODO
+            cov_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([vel_sigma, vel_sigma, vel_sigma])) # TODO: check
+            # cov_model = gtsam.noiseModel.Isotropic.Sigma(3, vel_sigma)
+        
+        self.graph_factors.add(gtsam.PriorFactorVector(
+            gtsam.symbol('v', frame_id), 
+            self.velocity, 
+            cov_model
+        ))
+
+    def add_bias_prior(self, frame_id: int, fixed: bool = False):
+        """Add bias prior unary factor"""
+        if fixed:
+            cov_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([1e-6]*6))
+        else:
+            # Combine accel_sigma and gyro_sigma into a single 6-element array
+            bias_sigma = np.concatenate((self.accel_sigma, self.gyro_sigma))
+            # Create a diagonal covariance model with the combined sigma
+            cov_model = gtsam.noiseModel.Diagonal.Sigmas(bias_sigma) # TODO: check
+        
+        self.graph_factors.add(gtsam.PriorFactorConstantBias(
+            gtsam.symbol('b', frame_id), 
+            self.imu_bias, 
+            cov_model
+        ))
+
     def add_odometry_factor(self, cur_id: int, last_id: int, odom_transform: np.ndarray, cov = None):
         """! add a odometry factor between two adjacent pose nodes
         Args:
@@ -226,7 +280,7 @@ class PoseGraphManager:
                                                 gtsam.symbol('x', cur_id),  #t
                                                 gtsam.Pose3(odom_transform),  # T_prev<-cur
                                                 cov_model))  # NOTE: add robust kernel
-        # TODO: V,B
+
     
     
     def add_loop_factor(self, cur_id: int, loop_id: int, loop_transform: np.ndarray, cov = None):
@@ -249,7 +303,7 @@ class PoseGraphManager:
                                                 gtsam.Pose3(loop_transform),  # T_loop<-cur
                                                 cov_model))  # NOTE: add robust kernel
 
-    def optimize_pose_graph(self):
+    def optimize_pose_graph(self, dataset: SLAMDataset, frame_id):
         
         if self.config.pgo_with_lm: # default
             opt_param = gtsam.LevenbergMarquardtParams()
@@ -274,13 +328,21 @@ class PoseGraphManager:
             print("[bold red]PGO done[/bold red]")
             print("error %f --> %f:" % (error_before, error_after))
 
-        self.graph_initials = self.graph_optimized # update the initial guess
+        # self.graph_initials = self.graph_optimized # update the initial guess
+        optimized_pose_imuframe = get_node_pose(self.graph_optimized, frame_id) # self.graph_optimized.atPose3(gtsam.symbol('x', frame_id))
+        dataset.last_pose_ref = optimized_pose_imuframe @ dataset.T_pose_to_velo
+        self.velocity = self.graph_optimized.atVector(gtsam.symbol('v', frame_id))
+        
+        self.imu_bias = self.graph_optimized.atConstantBias(gtsam.symbol('b', frame_id))
+        self.accBias = self.imu_bias.accelerometer()
+        self.gyroBias = self.imu_bias.gyroscope()
+        
 
         # update the pose of each frame after pgo
         frame_count = self.curr_node_idx+1
         self.pgo_poses = [None] * frame_count # start from 0
         for idx in range(frame_count):
-            self.pgo_poses[idx] = get_node_pose(self.graph_optimized, idx)
+            self.pgo_poses[idx] = get_node_pose(self.graph_optimized, idx) @ dataset.T_pose_to_velo
 
         self.cur_pose = self.pgo_poses[self.curr_node_idx] 
 

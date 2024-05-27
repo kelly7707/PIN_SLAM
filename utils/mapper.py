@@ -206,7 +206,7 @@ class Mapper():
         T3_0 = get_time()
 
         # determine used poses
-        if self.config.pgo_on:
+        if self.config.pgo_on or self.config.imu_pgo:
             self.used_poses = torch.tensor(np.array(self.dataset.pgo_poses), device=self.device, dtype=torch.float64)
         elif self.config.track_on:
             self.used_poses = torch.tensor(np.array(self.dataset.odom_poses), device=self.device, dtype=torch.float64)

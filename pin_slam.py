@@ -74,15 +74,20 @@ def run_pin_slam():
 
     # pose graph manager (for back-end optimization) initialization
     pgm = PoseGraphManager(config, dataset)
+    if config.imu_pgo:
+        pgm.add_pose_prior(0, np.eye(4) @ np.linalg.inv(dataset.T_pose_to_velo), fixed=True)
+        pgm.add_velocity_prior(0, fixed=False)
+        pgm.add_bias_prior(0, fixed=False)
     if config.pgo_on:      
         if dataset.gt_pose_provided: 
             pgm.add_pose_prior(0, dataset.poses_ref[config.begin_frame], fixed=True)
         else:
             # --- prior factor_1st frame
             pgm.add_pose_prior(0, np.eye(4), fixed=True)
+            
 
     # loop closure detector
-    if config.use_gt_loop:
+    if config.use_gt_loop: # default off
         lcd_gt = GTLoopManager(config) 
     lcd_npmc = NeuralPointMapContextManager(config, mapper) # npmc: neural point map context
 
@@ -107,7 +112,7 @@ def run_pin_slam():
 
         T1 = get_time()
         
-        dataset.preprocess_frame(frame_id) 
+        dataset.preprocess_frame(pgm, frame_id) 
 
         T2 = get_time()
         
@@ -137,6 +142,22 @@ def run_pin_slam():
         T3 = get_time()
 
         # III. Loop detection and pgo 
+        if config.imu_pgo:
+            pgm.add_frame_node(used_frame_id, dataset.pgo_poses[used_frame_id] @ np.linalg.inv(dataset.T_pose_to_velo)) # add new node and pose initial guess
+            pgm.init_poses = dataset.pgo_poses @ np.linalg.inv(dataset.T_pose_to_velo)
+
+            if used_frame_id > 0:
+                cur_edge_cov = cur_odom_cov if config.use_reg_cov_mat else None     
+                # --- between factor
+                imu_transform = dataset.T_pose_to_velo @ dataset.last_odom_tran @ np.linalg.inv(dataset.T_pose_to_velo)          
+                pgm.add_odometry_factor(used_frame_id, used_frame_id-1, imu_transform, cov = cur_edge_cov) # T_p<-c   # TODO: check- cur_edge_cov
+                pgm.estimate_drift(dataset.travel_dist, used_frame_id) # estimate the current drift
+
+                pgm.add_combined_IMU_factor(used_frame_id, used_frame_id-1)
+                # --- optimization & update
+                pgm.optimize_pose_graph(dataset, used_frame_id)
+
+
         if config.pgo_on: 
             # if config.use_gt_loop:
             #     lcd_gt.add_node(used_frame_id, dataset.poses_w_closed[frame_id]) # set current node in the loop detector
@@ -159,13 +180,13 @@ def run_pin_slam():
                 # --- between factor               
                 pgm.add_odometry_factor(used_frame_id, used_frame_id-1, dataset.last_odom_tran, cov = cur_edge_cov) # T_p<-c 
                 pgm.estimate_drift(dataset.travel_dist, used_frame_id) # estimate the current drift
-                # --- prior factor, default off （TODO just the initial frame）
+                # --- prior factor, default off （just the initial frame）
                 if config.pgo_with_pose_prior: # add pose prior
                     pgm.add_pose_prior(used_frame_id, dataset.pgo_poses[used_frame_id]) 
             
                 # --- optimization & update
-                pgm.optimize_pose_graph()
-                # TODO
+                pgm.optimize_pose_graph(dataset)
+
 
             # local_map_context_loop = False
             # if used_frame_id - pgm.last_loop_idx > config.pgo_freq and not dataset.stop_status:
