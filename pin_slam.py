@@ -75,9 +75,9 @@ def run_pin_slam():
     # pose graph manager (for back-end optimization) initialization
     pgm = PoseGraphManager(config, dataset)
     if config.imu_pgo:
-        pgm.add_pose_prior(0, np.eye(4) @ np.linalg.inv(dataset.T_pose_to_velo), fixed=True)
-        pgm.add_velocity_prior(0, fixed=False)
-        pgm.add_bias_prior(0, fixed=False)
+        pgm.add_pose_prior(0, np.eye(4) @ np.linalg.inv(dataset.T_pose_to_velo), fixed=True) # True
+        # pgm.add_velocity_prior(0, fixed=True) # False
+        # pgm.add_bias_prior(0, fixed=True) # False
     if config.pgo_on:      
         if dataset.gt_pose_provided: 
             pgm.add_pose_prior(0, dataset.poses_ref[config.begin_frame], fixed=True)

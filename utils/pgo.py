@@ -56,14 +56,14 @@ class PoseGraphManager:
     def imu_Preintegration_init(self, dataset: SLAMDataset):
         # source gtsam.CombinedImuFactorExample.py
         self.GRAVITY = 9.81 
-        params = gtsam.PreintegrationCombinedParams.MakeSharedU(self.GRAVITY) # OXTS coordinates are defined as x = forward, y = right, z = down
+        params = gtsam.PreintegrationCombinedParams.MakeSharedU(self.GRAVITY) # Dwrong!OXTS coordinates are defined as x = forward, y = right, z = down// see imu dataformat: forward,left,top
         
         self.imu_calib_initial_pose, self.accBias, self.gyroBias, self.accel_sigma, self.gyro_sigma = self.imu_calibration(dataset)
         self.imu_bias = gtsam.imuBias.ConstantBias(self.accBias, self.gyroBias)
         
         # Some arbitrary noise sigmas
-        self.gyro_sigma = np.ones(3)*1e-3
-        self.accel_sigma = np.ones(3)*1e-3
+        # self.gyro_sigma = np.ones(3)*1e-3
+        # self.accel_sigma = np.ones(3)*1e-3
         # self.gyro_sigma = np.zeros(3)
         # self.accel_sigma = np.zeros(3)
 
@@ -88,6 +88,8 @@ class PoseGraphManager:
         # initial_rotation = gtsam.Rot3(last_pose[:3, :3])
         # initial_translation = gtsam.Point3(last_pose[0, 3],last_pose[1, 3],last_pose[2, 3])
         initial_pose = gtsam.Pose3(last_pose)
+        if cur_id == 1:
+            initial_pose = gtsam.Pose3(last_pose )  # @ self.imu_calib_initial_pose  
         initial_state = gtsam.NavState(
             initial_pose,
             self.velocity) # https://github.com/borglab/gtsam/blob/4abef9248edc4c49943d8fd8a84c028deb486f4c/python/gtsam/examples/CombinedImuFactorExample.py#L164C9-L168C46 
@@ -110,7 +112,7 @@ class PoseGraphManager:
         self.graph_factors.add(gtsam.CombinedImuFactor(gtsam.symbol('x', last_id), gtsam.symbol('v', last_id), gtsam.symbol('x', cur_id),
                                 gtsam.symbol('v', cur_id), gtsam.symbol('b', last_id), gtsam.symbol('b', cur_id), self.pim))
     
-    def imu_calibration(self, dataset: SLAMDataset, imu_calibration_steps=30, visual=False):
+    def imu_calibration(self, dataset: SLAMDataset, imu_calibration_steps=30, visual=False, gravity_align=True):
         #
         num_samples = 0
         gyro_avg = np.zeros(3)
@@ -124,7 +126,7 @@ class PoseGraphManager:
         #     if dataset.ts_rawimu[idx].timestamp() - dataset.ts_rawimu[0].timestamp() < imu_calibration_time:
         
         for idx in range(imu_calibration_steps):
-            num_samples+=1
+            num_samples += 1
 
             raw_imu_filename = os.path.join(self.config.raw_imu_path, 'data', f'{idx:010d}.txt') #w-17:20, a-11:14
             raw_imu = np.loadtxt(raw_imu_filename)
@@ -142,22 +144,25 @@ class PoseGraphManager:
         accel_avg /= num_samples
         grav_vec = np.array([0, 0, self.GRAVITY])
         
-        # Bias computation using average
-        gyro_bias = gyro_avg
-        accel_bias = accel_avg - grav_vec
+        if gravity_align:
+            # Calculate initial orientation from gravity
+            grav_dir = accel_avg / np.linalg.norm(accel_avg) # (normalize to avoid scale, only rot needed)
+            grav_target = np.array([0, 0, 1])  # Z-up coordinate system
+            initial_orientation, _ = R.align_vectors([grav_dir],[grav_target]) # ?-? b to a
+            calibrated_initial_pose = np.eye(4)
+            calibrated_initial_pose[:3, :3] = initial_orientation.as_matrix()#.T
 
-        # Calculate initial orientation from gravity
-        grav_dir = accel_bias / np.linalg.norm(accel_bias)
-        grav_target = np.array([0, 0, 1])  # Assuming Z-up coordinate system
-        initial_orientation = R.align_vectors([grav_target], [grav_dir])[0]
-        calibrated_initial_pose = np.eye(4)
-        calibrated_initial_pose[:3, :3] = initial_orientation.as_matrix()
-
-        # Compute biases adjusted by initial pose
-        # grav_corrected = np.dot(calibrated_initial_pose[:3, :3].T, np.array([0, 0, self.GRAVITY]))
-        grav_corrected = initial_orientation.apply(np.array([0, 0, self.GRAVITY]))
-        accel_bias = accel_avg - grav_corrected
-        gyro_bias = gyro_avg
+            # Compute biases adjusted by initial pose
+            # # grav_corrected = np.dot(calibrated_initial_pose[:3, :3].T, np.array([0, 0, self.GRAVITY]))
+            grav_corrected = initial_orientation.apply(np.array([0, 0, self.GRAVITY])) 
+            # grav_corrected = grav_dir * self.GRAVITY
+            accel_bias = accel_avg - grav_corrected
+            gyro_bias = gyro_avg
+        else:
+            # # Bias computation using average
+            gyro_bias = gyro_avg
+            accel_bias = accel_avg - grav_vec
+            calibrated_initial_pose = np.eye(4)
 
         ang_vel_array = np.array(ang_vel_list)
         lin_acc_array = np.array(lin_acc_list)
@@ -214,7 +219,7 @@ class PoseGraphManager:
         self.curr_node_idx = frame_id # make start with 0
         if not self.graph_initials.exists(gtsam.symbol('x', frame_id)): # create if not yet exists
             if frame_id == 0:
-                self.graph_initials.insert(gtsam.symbol('x', frame_id), gtsam.Pose3(self.imu_calib_initial_pose))
+                self.graph_initials.insert(gtsam.symbol('x', frame_id), gtsam.Pose3(init_pose )) # @ self.imu_calib_initial_pose
             else:
                 self.graph_initials.insert(gtsam.symbol('x', frame_id), gtsam.Pose3(init_pose))
             # v b 
@@ -361,6 +366,7 @@ class PoseGraphManager:
         self.pgo_poses = [None] * frame_count # start from 0
         for idx in range(frame_count):
             self.pgo_poses[idx] = get_node_pose(self.graph_optimized, idx) @ dataset.T_pose_to_velo
+        # self.pgo_poses[frame_id] = optimized_pose_imuframe # TODO
 
         self.cur_pose = self.pgo_poses[self.curr_node_idx] 
 
