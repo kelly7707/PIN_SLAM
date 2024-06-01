@@ -52,6 +52,12 @@ class PoseGraphManager:
         self.pgo_count = 0
 
         self.imu_Preintegration_init(dataset)
+        self.velocity_record = []
+
+        # testing velocity
+        self.imu_v_initial = []
+        self.imu_v_output = []
+        self.imu_v_optimized = []
 
     def imu_Preintegration_init(self, dataset: SLAMDataset):
         # source gtsam.CombinedImuFactorExample.py
@@ -64,8 +70,6 @@ class PoseGraphManager:
         # Some arbitrary noise sigmas
         # self.gyro_sigma = np.ones(3)*1e-3
         # self.accel_sigma = np.ones(3)*1e-3
-        # self.gyro_sigma = np.zeros(3)
-        # self.accel_sigma = np.zeros(3)
 
         I_3x3 = np.eye(3)
         params.setGyroscopeCovariance(self.gyro_sigma**2 * I_3x3)
@@ -89,14 +93,18 @@ class PoseGraphManager:
         # initial_translation = gtsam.Point3(last_pose[0, 3],last_pose[1, 3],last_pose[2, 3])
         initial_pose = gtsam.Pose3(last_pose)
         if cur_id == 1:
-            initial_pose = gtsam.Pose3(last_pose )  # @ self.imu_calib_initial_pose  
+            initial_pose = gtsam.Pose3(self.imu_calib_initial_pose) #self.imu_calib_initial_pose  # last_pose @ self.imu_calib_initial_pose  
         initial_state = gtsam.NavState(
             initial_pose,
             self.velocity) # https://github.com/borglab/gtsam/blob/4abef9248edc4c49943d8fd8a84c028deb486f4c/python/gtsam/examples/CombinedImuFactorExample.py#L164C9-L168C46 
-        imu_prediction = self.pim.predict(initial_state, self.imu_bias)
-        predicted_pose = imu_prediction.pose() # w2imu
+        
+        self.imu_v_initial.append(self.velocity) # testing
 
+        imu_prediction = self.pim.predict(initial_state, self.imu_bias)
+        
+        predicted_pose = imu_prediction.pose() # w2imu
         self.velocity = imu_prediction.velocity()
+        self.imu_v_output.append(self.velocity)
 
         self.graph_initials.insert(gtsam.symbol('v', cur_id), self.velocity)
         self.graph_initials.insert(gtsam.symbol('b', cur_id), self.imu_bias) # TODO? What bias??? # https://github.com/borglab/gtsam/blob/4abef9248edc4c49943d8fd8a84c028deb486f4c/python/gtsam/examples/CombinedImuFactorExample.py#L219C17-L221C55 
@@ -104,6 +112,9 @@ class PoseGraphManager:
         predicted_pose_homo = np.eye(4)
         predicted_pose_homo[:3,:3] = predicted_pose.rotation().matrix()
         predicted_pose_homo[:3,3] = predicted_pose.translation()
+
+        if not self.config.imu_pgo:
+            self.pim.resetIntegration() # -- preintegration testing --- 
         return predicted_pose_homo
         
     
@@ -148,13 +159,26 @@ class PoseGraphManager:
             # Calculate initial orientation from gravity
             grav_dir = accel_avg / np.linalg.norm(accel_avg) # (normalize to avoid scale, only rot needed)
             grav_target = np.array([0, 0, 1])  # Z-up coordinate system
-            initial_orientation, _ = R.align_vectors([grav_dir],[grav_target]) # ?-? b to a
+            initial_orientation, _ = R.align_vectors([grav_target],[grav_dir]) # ?-? b to a
+            
             calibrated_initial_pose = np.eye(4)
             calibrated_initial_pose[:3, :3] = initial_orientation.as_matrix()#.T
+            
+            # rotation seems wrong
+            R_z_90 = np.array([
+                        [0, 1, 0, 0],
+                        [-1, 0, 0, 0],
+                        [0, 0, 1, 0],
+                        [0, 0, 0, 1]
+                    ])
+            calibrated_initial_pose = R_z_90 @ calibrated_initial_pose
+            #
+            # print('-----------calibration imu initial pose ---------------',calibrated_initial_pose)
 
             # Compute biases adjusted by initial pose
             # # grav_corrected = np.dot(calibrated_initial_pose[:3, :3].T, np.array([0, 0, self.GRAVITY]))
-            grav_corrected = initial_orientation.apply(np.array([0, 0, self.GRAVITY])) 
+            grav_corrected =  np.linalg.inv(calibrated_initial_pose[:3, :3]) @ np.array([0, 0, self.GRAVITY])
+            # grav_corrected = initial_orientation.apply(np.array([0, 0, self.GRAVITY])) 
             # grav_corrected = grav_dir * self.GRAVITY
             accel_bias = accel_avg - grav_corrected
             gyro_bias = gyro_avg
@@ -219,7 +243,7 @@ class PoseGraphManager:
         self.curr_node_idx = frame_id # make start with 0
         if not self.graph_initials.exists(gtsam.symbol('x', frame_id)): # create if not yet exists
             if frame_id == 0:
-                self.graph_initials.insert(gtsam.symbol('x', frame_id), gtsam.Pose3(init_pose )) # @ self.imu_calib_initial_pose
+                self.graph_initials.insert(gtsam.symbol('x', frame_id), gtsam.Pose3(self.imu_calib_initial_pose)) # np.eye(4) # self.imu_calib_initial_pose # init_pose  @ self.imu_calib_initial_pose
             else:
                 self.graph_initials.insert(gtsam.symbol('x', frame_id), gtsam.Pose3(init_pose))
             # v b 
@@ -258,7 +282,7 @@ class PoseGraphManager:
         if fixed:
             cov_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([1e-6]*3))
         else:
-            vel_sigma = self.drift_radius + 5e-4 #1e-4 TODO
+            vel_sigma = self.drift_radius + 1 #1e-4 TODO
             cov_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([vel_sigma, vel_sigma, vel_sigma])) # TODO: check
             # cov_model = gtsam.noiseModel.Isotropic.Sigma(3, vel_sigma)
         
@@ -276,6 +300,7 @@ class PoseGraphManager:
             # Combine accel_sigma and gyro_sigma into a single 6-element array
             bias_sigma = np.concatenate((self.accel_sigma, self.gyro_sigma))
             # Create a diagonal covariance model with the combined sigma
+            # bias_sigma = np.array([1e-3]*6)
             cov_model = gtsam.noiseModel.Diagonal.Sigmas(bias_sigma) # TODO: check
         
         self.graph_factors.add(gtsam.PriorFactorConstantBias(
@@ -353,27 +378,57 @@ class PoseGraphManager:
 
         # self.graph_initials = self.graph_optimized # update the initial guess
         optimized_pose_imuframe = get_node_pose(self.graph_optimized, frame_id) # self.graph_optimized.atPose3(gtsam.symbol('x', frame_id))
-        dataset.last_pose_ref = optimized_pose_imuframe @ dataset.T_pose_to_velo
+        dataset.last_pose_ref = optimized_pose_imuframe @ np.linalg.inv(dataset.T_pose_to_velo)
         self.velocity = self.graph_optimized.atVector(gtsam.symbol('v', frame_id))
         
         self.imu_bias = self.graph_optimized.atConstantBias(gtsam.symbol('b', frame_id))
         self.accBias = self.imu_bias.accelerometer()
         self.gyroBias = self.imu_bias.gyroscope()
-        
+
+        self.imu_v_optimized.append(self.velocity) # test
 
         # update the pose of each frame after pgo
         frame_count = self.curr_node_idx+1
         self.pgo_poses = [None] * frame_count # start from 0
         for idx in range(frame_count):
-            self.pgo_poses[idx] = get_node_pose(self.graph_optimized, idx) @ dataset.T_pose_to_velo
+            self.pgo_poses[idx] = get_node_pose(self.graph_optimized, idx) @ np.linalg.inv(dataset.T_pose_to_velo)
         # self.pgo_poses[frame_id] = optimized_pose_imuframe # TODO
+        self.pgo_poses[frame_id] = dataset.last_pose_ref
 
         self.cur_pose = self.pgo_poses[self.curr_node_idx] 
+        assert np.allclose(self.pgo_poses[self.curr_node_idx], dataset.last_pose_ref, atol=1e-8), "The matrices do not match."
 
         self.pgo_count += 1
 
 
         self.pim.resetIntegration()
+
+        velocity_checking = False
+        if velocity_checking and frame_id % 40 == 0:
+            imu_v_initial_np = np.array(self.imu_v_initial)
+            imu_v_output_np = np.array(self.imu_v_output)
+            imu_v_optimized_np = np.array(self.imu_v_optimized)
+
+            time = np.arange(len(imu_v_initial_np))
+            # Create a figure
+            fig, axes = plt.subplots(3, 1, figsize=(10, 12))
+            # Plot x, y, z components in separate subplots
+            components = ['x', 'y', 'z']
+            for i in range(3):
+                axes[i].plot(time, imu_v_initial_np[:, i], 'r-', label='Initial')
+                axes[i].plot(time, imu_v_output_np[:, i], 'g-', label='Output')
+                axes[i].plot(time, imu_v_optimized_np[:, i], 'b-', label='Optimized')
+                axes[i].set_xlabel('Time')
+                axes[i].set_ylabel(f'Velocity {components[i]}')
+                axes[i].legend()
+                axes[i].set_title(f'IMU Velocity in {components[i]} direction')
+
+            # Set the main title
+            fig.suptitle('IMU Velocities Over Time', fontsize=16)
+            # Adjust layout
+            plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+            # Show the plot
+            plt.show()
 
     def write_g2o(self, out_file):
         gtsam.writeG2o(self.graph_factors, self.graph_initials, out_file)

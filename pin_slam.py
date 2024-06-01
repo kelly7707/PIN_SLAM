@@ -75,9 +75,11 @@ def run_pin_slam():
     # pose graph manager (for back-end optimization) initialization
     pgm = PoseGraphManager(config, dataset)
     if config.imu_pgo:
-        pgm.add_pose_prior(0, np.eye(4) @ np.linalg.inv(dataset.T_pose_to_velo), fixed=True) # True
-        # pgm.add_velocity_prior(0, fixed=True) # False
-        # pgm.add_bias_prior(0, fixed=True) # False
+        # pgm.add_pose_prior(0, np.eye(4) @ dataset.T_pose_to_velo , fixed=True) # pgm.imu_calib_initial_pose  # True np.eye(4) @ dataset.T_pose_to_velo
+        pgm.add_pose_prior(0, pgm.imu_calib_initial_pose , fixed=True) #pgm.imu_calib_initial_pose
+        # better removed 
+        pgm.add_velocity_prior(0, fixed=False) # False
+        pgm.add_bias_prior(0, fixed=False) # False
     if config.pgo_on:      
         if dataset.gt_pose_provided: 
             pgm.add_pose_prior(0, dataset.poses_ref[config.begin_frame], fixed=True)
@@ -108,7 +110,7 @@ def run_pin_slam():
         # I. Load data and preprocessing
         T0 = get_time()
 
-        dataset.read_frame(frame_id) # change here for ros node
+        dataset.read_frame(frame_id, pgm.imu_calib_initial_pose) # change here for ros node
 
         T1 = get_time()
         
@@ -143,13 +145,13 @@ def run_pin_slam():
 
         # III. Loop detection and pgo 
         if config.imu_pgo:
-            pgm.add_frame_node(used_frame_id, dataset.pgo_poses[used_frame_id] @ np.linalg.inv(dataset.T_pose_to_velo)) # add new node and pose initial guess
-            pgm.init_poses = dataset.pgo_poses @ np.linalg.inv(dataset.T_pose_to_velo)
+            pgm.add_frame_node(used_frame_id, dataset.pgo_poses[used_frame_id] @ dataset.T_pose_to_velo) #  add new node and pose initial guess
+            pgm.init_poses = dataset.pgo_poses @ dataset.T_pose_to_velo # 
 
             if used_frame_id > 0:
                 cur_edge_cov = cur_odom_cov if config.use_reg_cov_mat else None     
                 # --- between factor
-                imu_transform = dataset.T_pose_to_velo @ dataset.last_odom_tran @ np.linalg.inv(dataset.T_pose_to_velo)          
+                imu_transform = np.linalg.inv(dataset.T_pose_to_velo) @ dataset.last_odom_tran @ dataset.T_pose_to_velo        
                 pgm.add_odometry_factor(used_frame_id, used_frame_id-1, imu_transform, cov = cur_edge_cov) # T_p<-c   # TODO: check- cur_edge_cov
                 pgm.estimate_drift(dataset.travel_dist, used_frame_id) # estimate the current drift
 

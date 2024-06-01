@@ -85,12 +85,20 @@ class SLAMDataset(Dataset):
         fileCameraToPose = os.path.join(config.calib360_path, 'calib_cam_to_pose.txt')
         T_cam_to_pose = loadCalibration.loadCalibrationCameraToPose(fileCameraToPose) # cam to imu
         # print('Loaded %s' % fileCameraToPose)
-        # print(T_cam_to_pose)
+        # print('----------cam to Pose--------',T_cam_to_pose)
 
         fileCameraToVelo = os.path.join(config.calib360_path, 'calib_cam_to_velo.txt')
         T_cam_to_velo = loadCalibration.loadCalibrationRigid(fileCameraToVelo)
+        # print('----------cam to Lidar--------',T_cam_to_velo)
 
-        self.T_pose_to_velo = T_cam_to_pose['image_00'] @ np.linalg.inv(T_cam_to_velo)
+        # self.T_pose_to_velo = T_cam_to_pose['image_00'] @ np.linalg.inv(T_cam_to_velo) #from imu to cam @ from cam to lidar
+        self.T_pose_to_velo = T_cam_to_velo @ np.linalg.inv(T_cam_to_pose['image_00']) 
+        print('-------transforamtion from reference -------',self.T_pose_to_velo) # checked: correct
+        # fake correct
+        # self.T_pose_to_velo = np.linalg.inv(T_cam_to_velo) @ T_cam_to_pose['image_00'] 
+        # self.T_pose_to_velo = np.linalg.inv(T_cam_to_pose['image_00']) @ T_cam_to_velo # wrong, should inv
+        # print('-------transforamtion I feel like-------',self.T_pose_to_velo) # wrong!
+
         # '''source 'kitti360Viewer3DRaw.py'
         #  TrVeloToPose = TrCamToPose['image_00'] @ np.linalg.inv(TrCam0ToVelo)
         # Tr_delta = np.linalg.inv(self.TrVeloToPose) @ Tr_pose_pose @ self.TrVeloToPose
@@ -190,8 +198,14 @@ class SLAMDataset(Dataset):
 
         # testing IMU
         self.vidual_poses = []
+        self.visual_poses_direction = []
         self.visual_lidar_poses = []
         self.vidual_gtposes = []
+
+        # testing tracking
+        # pose: imu preintegration input(last frame)/output; estimated by tracking (initial value); optimized value
+        # velocity: imu preintegration input(last frame = optimized last frame)/output; optimized
+        
 
     def read_frame_ros(self, msg, ts_field_name = "time", ts_col=3):
 
@@ -236,7 +250,7 @@ class SLAMDataset(Dataset):
 
            
 
-    def read_frame(self, frame_id):
+    def read_frame(self, frame_id, calibration_imu_initial):
         
         # load gt pose if available
         if self.gt_pose_provided: # default false
@@ -244,6 +258,8 @@ class SLAMDataset(Dataset):
             self.gt_poses.append(self.cur_pose_ref)
         else: # or initialize with identity
             self.cur_pose_ref = np.eye(4) # default
+            # self.cur_pose_ref =  np.linalg.inv(self.T_pose_to_velo)
+            # self.cur_pose_ref = calibration_imu_initial @ np.linalg.inv(self.T_pose_to_velo)
         self.cur_pose_torch = torch.tensor(self.cur_pose_ref, device=self.device, dtype=self.dtype)
 
         point_ts = None
@@ -456,6 +472,10 @@ class SLAMDataset(Dataset):
         init_imu_integrator = {}
         # prepare for the registration
         if self.processed_frame == 0: # initialize the first frame, no tracking yet
+            #
+            self.cur_pose_ref = pgm.imu_calib_initial_pose @ np.linalg.inv(self.T_pose_to_velo)
+            # self.cur_pose_ref = np.linalg.inv(self.T_pose_to_velo)
+            #
             if self.config.track_on:
                 self.odom_poses.append(self.cur_pose_ref)
             if self.config.pgo_on or self.config.imu_pgo:
@@ -474,7 +494,8 @@ class SLAMDataset(Dataset):
 
             # init_imu_integrator['vel'] = torch.zeros(3)
             # self.last_imu_integrator_vel = init_imu_integrator['vel']
-            self.imu_preinte_continuous_test = np.eye(4) 
+            # self.imu_preinte_continuous_test = np.eye(4) 
+            self.imu_preinte_continuous_test = np.linalg.inv(self.T_pose_to_velo)
 
         elif self.processed_frame > 0: 
             # pose initial guess
@@ -505,51 +526,88 @@ class SLAMDataset(Dataset):
                 # init_imu_integrator['vel'] = self.last_imu_integrator_vel
 
 
+            # # IMU- TEST preintegration
+            # last_pose_w2imu = self.imu_preinte_continuous_test @ self.T_pose_to_velo
+            # # last_pose_w2imu = self.imu_preinte_continuous_test
+            # initial_guess_w2imu = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=last_pose_w2imu, cur_id=self.processed_frame)
+            # initial_guess_w2lidar = initial_guess_w2imu  @ np.linalg.inv(self.T_pose_to_velo)
+            # self.imu_preinte_continuous_test = initial_guess_w2lidar
+            
             # # IMU--2 pose initial guess
             # # transform to imu frame
-            last_pose_w2imu = self.last_pose_ref @ np.linalg.inv(self.T_pose_to_velo) # TODO: order?
-            # last_pose_w2imu = self.imu_preinte_continuous_test
+            # last_pose_w2imu = self.last_pose_ref @ np.linalg.inv(self.T_pose_to_velo) # TODO: order? -wrong
+            last_pose_w2imu = self.last_pose_ref @ self.T_pose_to_velo 
+            # last_pose_w2imu = self.imu_preinte_continuous_test @ self.T_pose_to_velo
             initial_guess_w2imu = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=last_pose_w2imu, cur_id=self.processed_frame)
-            initial_guess_w2lidar = initial_guess_w2imu @ self.T_pose_to_velo
+            initial_guess_w2lidar = initial_guess_w2imu @ np.linalg.inv(self.T_pose_to_velo)
             
-  
-            self.imu_preinte_continuous_test = initial_guess_w2imu
             cur_pose_init_guess = initial_guess_w2lidar
+            self.imu_preinte_continuous_test = initial_guess_w2lidar
 
             # --- testing: IMU preinte vidual
             poses = initial_guess_w2lidar  #initial_guess_w2imu # initial_guess_w2lidar # output, wrt. initial imu frame
             self.vidual_poses.append(poses[:3, 3])
+            self.visual_poses_direction.append(poses[:3, :3])
             self.visual_lidar_poses.append(self.estimated_pose_lidar[:3, 3])
             # self.vidual_gtposes.append(poses_gt)
             # visual_poses_np = np.concatenate(self.vidual_poses, axis=0)
             # visual_gtposes_np = np.concatenate(self.vidual_gtposes, axis=0)
-            visual_poses_np = np.array(self.vidual_poses)
-            visual_poses_lidar_np = np.array(self.visual_lidar_poses)
             
             
+            plot = '2d'
             if frame_id % 40==0:
-                plt.figure(figsize=(5, 5))                
+                visual_poses_np = np.array(self.vidual_poses)
+                visual_poses_direction_np = np.array(self.visual_poses_direction)
+                visual_poses_lidar_np = np.array(self.visual_lidar_poses)
+                if plot == '2d':
+                    plt.figure(figsize=(5, 5))                
 
-                # ax = plt.axes(projection='3d')
-                # ax.plot3D(visual_poses_np[:,0], visual_poses_np[:,1], visual_poses_np[:,2], 'b')
-                # # ax.plot3D(visual_gtposes_np[:,0], visual_gtposes_np[:,1], visual_gtposes_np[:,2], 'r')
+                    # ax = plt.axes(projection='3d')
+                    # ax.plot3D(visual_poses_np[:,0], visual_poses_np[:,1], visual_poses_np[:,2], 'b')
+                    # # ax.plot3D(visual_gtposes_np[:,0], visual_gtposes_np[:,1], visual_gtposes_np[:,2], 'r')
 
-                plt.plot(visual_poses_np[:,0], visual_poses_np[:,1], 'b')  # Blue line for the trajectory
-                plt.plot(visual_poses_lidar_np[:,0], visual_poses_lidar_np[:,1], 'r')
+                    plt.plot(visual_poses_np[0,0], visual_poses_np[0,1], 'bo', markersize=10)
+                    plt.plot(visual_poses_np[:,0], visual_poses_np[:,1], 'b')  # Blue line for the trajectory
+                    # plt.plot(visual_poses_lidar_np[:,0], visual_poses_lidar_np[:,1], 'r')
 
-                plt.title("Gtsam IMU Integrator")
-                # plt.legend(["PyPose", "Ground Truth"])
-                figure = os.path.join('/home/zjw/master_thesis/visual/testing'+f'gtsam IMU preintegration_{frame_id}'+'.png')
-                plt.savefig(figure)
-                print("Saved to", figure)
+                    plt.title("Gtsam IMU Integrator")
+                    # plt.legend(["PyPose", "Ground Truth"])
+                    figure = os.path.join('/home/zjw/master_thesis/visual/testing'+f'gtsam IMU preintegration_{frame_id}'+'.png')
+                    plt.savefig(figure)
+                    print("Saved to", figure)
 
-                # # -- 
-                # plt.figure(figsize=(5, 5)) 
-                # plt.plot(visual_poses_lidar_np[:,0], visual_poses_lidar_np[:,1], 'r')
-                # plt.title("Lidar IMU Integrator")
-                # figure = os.path.join('/home/zjw/master_thesis/visual/testing'+f'Lidar IMU preintegration_{frame_id}'+'.png')
-                # plt.savefig(figure)
+                    # # -- 
+                    # plt.figure(figsize=(5, 5)) 
+                    # plt.plot(visual_poses_lidar_np[:,0], visual_poses_lidar_np[:,1], 'r')
+                    # plt.title("Lidar IMU Integrator")
+                    # figure = os.path.join('/home/zjw/master_thesis/visual/testing'+f'Lidar IMU preintegration_{frame_id}'+'.png')
+                    # plt.savefig(figure)
+                else:
+                    # Create a figure
+                    fig = plt.figure(figsize=(8, 8))
+                    ax = fig.add_subplot(111, projection='3d')
 
+                    # Plot the poses with orientation vectors
+                    for i in range(len(visual_poses_np)):
+                        plot_frame(ax, visual_poses_direction_np[i], visual_poses_np[i], 'Pose', 'k', ['r', 'g', 'b'], length=0.05)
+
+                    # Optionally, plot the LiDAR poses
+                    # ax.plot3D(visual_poses_lidar_np[:, 0], visual_poses_lidar_np[:, 1], visual_poses_lidar_np[:, 2], 'c')
+
+                    # Set labels and title
+                    ax.set_xlabel('X-axis')
+                    ax.set_ylabel('Y-axis')
+                    ax.set_zlabel('Z-axis')
+                    plt.title("3D Poses with Orientation Vectors and LiDAR Poses")
+
+                    # Save the figure
+                    frame_id = 0  # Replace with your actual frame ID
+                    figure_path = os.path.join('/home/zjw/master_thesis/visual/testing', f'gtsam_IMU_preintegration_{frame_id}.png')
+                    plt.savefig(figure_path)
+                    print("Saved to", figure_path)
+
+                    # Show the plot
+                    plt.show()
 
 
             # --- pose initial guess tensor
@@ -653,8 +711,8 @@ class SLAMDataset(Dataset):
         else:
             self.consecutive_lose_track_frame = 0
         
-        if self.consecutive_lose_track_frame > 20:
-            sys.exit("Lose track for a long time, system failed") # FIXME
+        # if self.consecutive_lose_track_frame > 20:
+            # sys.exit("Lose track for a long time, system failed") # FIXME
 
     def update_poses_after_pgo(self, pgo_cur_pose, pgo_poses):
         self.cur_pose_ref = pgo_cur_pose
@@ -1173,3 +1231,16 @@ def write_traj_as_o3d(poses: List[np.ndarray], path):
         o3d.io.write_point_cloud(path, o3d_pcd)
 
     return o3d_pcd
+
+def plot_frame(ax, R, t, frame_label, origin_color, colors, length=0.01):
+    # Plot the origin
+    ax.scatter(t[0], t[1], t[2], color=origin_color, label=frame_label)
+    
+    # Plot the x, y, z axes with different colors
+    for i in range(3):
+        ax.quiver(t[0], t[1], t[2], R[0, i], R[1, i], R[2, i], color=colors[i], length=length)
+    
+    # Add text labels for the axes
+    ax.text(t[0] + R[0, 0] * length, t[1] + R[1, 0] * length, t[2] + R[2, 0] * length, 'X', color=colors[0])
+    ax.text(t[0] + R[0, 1] * length, t[1] + R[1, 1] * length, t[2] + R[2, 1] * length, 'Y', color=colors[1])
+    ax.text(t[0] + R[0, 2] * length, t[1] + R[1, 2] * length, t[2] + R[2, 2] * length, 'Z', color=colors[2])
