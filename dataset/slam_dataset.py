@@ -92,8 +92,9 @@ class SLAMDataset(Dataset):
         # print('----------cam to Lidar--------',T_cam_to_velo)
 
         # self.T_pose_to_velo = T_cam_to_pose['image_00'] @ np.linalg.inv(T_cam_to_velo) #from imu to cam @ from cam to lidar
-        self.T_pose_to_velo = T_cam_to_velo @ np.linalg.inv(T_cam_to_pose['image_00']) 
-        print('-------transforamtion from reference -------',self.T_pose_to_velo) # checked: correct
+        self.T_L_I = T_cam_to_velo @ np.linalg.inv(T_cam_to_pose['image_00']) 
+        self.T_I_L = np.linalg.inv(self.T_L_I)
+        # print('-------transforamtion from reference -------',self.T_pose_to_velo) # checked: correct
         # fake correct
         # self.T_pose_to_velo = np.linalg.inv(T_cam_to_velo) @ T_cam_to_pose['image_00'] 
         # self.T_pose_to_velo = np.linalg.inv(T_cam_to_pose['image_00']) @ T_cam_to_velo # wrong, should inv
@@ -158,9 +159,9 @@ class SLAMDataset(Dataset):
         
         self.color_scale: float = 255.
         
-        self.last_pose_ref = np.eye(4)
+        self.T_Wl_Llast = np.eye(4)
         self.last_odom_tran = np.eye(4)
-        self.cur_pose_ref = np.eye(4)
+        self.T_Wl_Lcur = np.eye(4)
         if self.config.kitti_correction_on:
             self.last_odom_tran[0,3] = self.config.max_range*1e-2 # inital guess for booting on x aixs
             self.color_scale = 1.
@@ -215,8 +216,8 @@ class SLAMDataset(Dataset):
         from sensor_msgs import point_cloud2
 
         # ts_col represents the column id for timestamp
-        self.cur_pose_ref = np.eye(4)
-        self.cur_pose_torch = torch.tensor(self.cur_pose_ref, device=self.device, dtype=self.dtype)
+        self.T_Wl_Lcur = np.eye(4)
+        self.cur_pose_torch = torch.tensor(self.T_Wl_Lcur, device=self.device, dtype=self.dtype)
 
         pc_data = point_cloud2.read_points(msg, field_names=("x", "y", "z", ts_field_name), skip_nans=True)
 
@@ -254,13 +255,13 @@ class SLAMDataset(Dataset):
         
         # load gt pose if available
         if self.gt_pose_provided: # default false
-            self.cur_pose_ref = self.poses_ref[frame_id]
-            self.gt_poses.append(self.cur_pose_ref)
+            self.T_Wl_Lcur = self.poses_ref[frame_id]
+            self.gt_poses.append(self.T_Wl_Lcur)
         else: # or initialize with identity
-            self.cur_pose_ref = np.eye(4) # default
-            # self.cur_pose_ref =  np.linalg.inv(self.T_pose_to_velo)
-            # self.cur_pose_ref = calibration_imu_initial @ np.linalg.inv(self.T_pose_to_velo)
-        self.cur_pose_torch = torch.tensor(self.cur_pose_ref, device=self.device, dtype=self.dtype)
+            self.T_Wl_Lcur = np.eye(4) # default
+            # self.T_Wl_Lcur =  np.linalg.inv(self.T_pose_to_velo)
+            # self.T_Wl_Lcur = calibration_imu_initial @ np.linalg.inv(self.T_pose_to_velo)
+        self.cur_pose_torch = torch.tensor(self.T_Wl_Lcur, device=self.device, dtype=self.dtype)
 
         point_ts = None
 
@@ -473,18 +474,21 @@ class SLAMDataset(Dataset):
         # prepare for the registration
         if self.processed_frame == 0: # initialize the first frame, no tracking yet
             #
-            self.cur_pose_ref = pgm.imu_calib_initial_pose @ np.linalg.inv(self.T_pose_to_velo)
-            # self.cur_pose_ref = np.linalg.inv(self.T_pose_to_velo)
+            # self.T_Wl_Lcur = pgm.imu_calib_initial_pose @ np.linalg.inv(self.T_pose_t  o_velo)
+            self.T_Wl_Wi=  np.linalg.inv( pgm.T_Wi_I0 @ self.T_I_L) # wi to wl
+            # self.T_Wl_Lcur = np.linalg.inv(self.T_pose_to_velo)
             #
             if self.config.track_on:
-                self.odom_poses.append(self.cur_pose_ref)
+                self.odom_poses.append(self.T_Wl_Lcur)
             if self.config.pgo_on or self.config.imu_pgo:
-                self.pgo_poses.append(self.cur_pose_ref)   
+                self.pgo_poses.append(self.T_Wl_Lcur)   
             if self.gt_pose_provided and frame_id > 0: # not start with the first frame, default false
-                self.last_odom_tran = inv(self.poses_ref[frame_id-1]) @ self.cur_pose_ref # T_last<-cur
+                self.last_odom_tran = inv(self.poses_ref[frame_id-1]) @ self.T_Wl_Lcur # T_last<-cur
             self.travel_dist.append(0.)
-            self.last_pose_ref = self.cur_pose_ref
-            self.estimated_pose_lidar = self.cur_pose_ref
+            self.T_Wl_Llast = self.T_Wl_Lcur
+
+
+            self.estimated_pose_lidar = self.T_Wl_Lcur
             # # IMU frame0 initialization
             # # test imu preintegration (imu coord: x = forward, y = right, z = down)
             # init_imu_integrator['pos'] = torch.zeros(3) #wrong. + lidar to imu
@@ -495,7 +499,7 @@ class SLAMDataset(Dataset):
             # init_imu_integrator['vel'] = torch.zeros(3)
             # self.last_imu_integrator_vel = init_imu_integrator['vel']
             # self.imu_preinte_continuous_test = np.eye(4) 
-            self.imu_preinte_continuous_test = np.linalg.inv(self.T_pose_to_velo)
+            self.imu_preinte_continuous_test = np.linalg.inv(self.T_L_I)
 
         elif self.processed_frame > 0: 
             # pose initial guess
@@ -503,9 +507,9 @@ class SLAMDataset(Dataset):
             last_tran = np.linalg.norm(self.last_odom_tran[:3,3])  # from update_odom_pose()
             # if self.config.uniform_motion_on and not self.lose_track and last_tran > 0.2 * self.config.voxel_size_m: # apply uniform motion model here
             if self.config.uniform_motion_on and not self.lose_track: # default: apply uniform motion model here
-                cur_pose_init_guess = self.last_pose_ref @ self.last_odom_tran # T_world<-cur = T_world<-last @ T_last<-cur
+                cur_pose_init_guess = self.T_Wl_Llast @ self.last_odom_tran # T_world<-cur = T_world<-last @ T_last<-cur
             else: # static initial guess
-                cur_pose_init_guess = self.last_pose_ref
+                cur_pose_init_guess = self.T_Wl_Llast
 
             if not self.config.track_on and self.gt_pose_provided: # default off
                 cur_pose_init_guess = self.poses_ref[frame_id]
@@ -535,17 +539,20 @@ class SLAMDataset(Dataset):
             
             # # IMU--2 pose initial guess
             # # transform to imu frame
-            # last_pose_w2imu = self.last_pose_ref @ np.linalg.inv(self.T_pose_to_velo) # TODO: order? -wrong
-            last_pose_w2imu = self.last_pose_ref @ self.T_pose_to_velo 
+            # last_pose_w2imu = self.T_Wl_Llast @ np.linalg.inv(self.T_pose_to_velo) # TODO: order? -wrong
+            # last_pose_w2imu = self.T_Wl_Llast @ self.T_pose_to_velo 
+            T_Wi_I = np.linalg.inv(self.T_Wl_Wi) @ self.T_Wl_Llast @ self.T_L_I 
+            if frame_id==1:
+                assert np.allclose(T_Wi_I, pgm.T_Wi_I0)
             # last_pose_w2imu = self.imu_preinte_continuous_test @ self.T_pose_to_velo
-            initial_guess_w2imu = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=last_pose_w2imu, cur_id=self.processed_frame)
-            initial_guess_w2lidar = initial_guess_w2imu @ np.linalg.inv(self.T_pose_to_velo)
+            T_Wi_I = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=T_Wi_I, cur_id=self.processed_frame)
+            T_Wl_L = self.T_Wl_Wi @ T_Wi_I @ self.T_I_L
             
-            cur_pose_init_guess = initial_guess_w2lidar
-            self.imu_preinte_continuous_test = initial_guess_w2lidar
+            cur_pose_init_guess = T_Wl_L
+            self.imu_preinte_continuous_test = T_Wl_L
 
             # --- testing: IMU preinte vidual
-            poses = initial_guess_w2lidar  #initial_guess_w2imu # initial_guess_w2lidar # output, wrt. initial imu frame
+            poses = T_Wl_L  #initial_guess_w2imu # initial_guess_w2lidar # output, wrt. initial imu frame
             self.vidual_poses.append(poses[:3, 3])
             self.visual_poses_direction.append(poses[:3, :3])
             self.visual_lidar_poses.append(self.estimated_pose_lidar[:3, 3])
@@ -662,9 +669,9 @@ class SLAMDataset(Dataset):
 
         self.cur_pose_torch = cur_pose_torch.detach() # need to be out of the computation graph, used for mapping
 
-        self.cur_pose_ref = self.cur_pose_torch.cpu().numpy()    
+        self.T_Wl_Lcur = self.cur_pose_torch.cpu().numpy()    
     
-        self.last_odom_tran = inv(self.last_pose_ref) @ self.cur_pose_ref # T_last<-cur
+        self.last_odom_tran = inv(self.T_Wl_Llast) @ self.T_Wl_Lcur # T_last<-cur
 
         if tranmat_close_to_identity(self.last_odom_tran, 1e-3, self.config.voxel_size_m*0.1):
             self.stop_count += 1
@@ -679,7 +686,7 @@ class SLAMDataset(Dataset):
             self.stop_status = False
 
         if self.config.pgo_on or self.config.imu_pgo: # initialization the pgo pose
-            self.pgo_poses.append(self.cur_pose_ref) 
+            self.pgo_poses.append(self.T_Wl_Lcur) 
 
         if self.odom_poses is not None:
             cur_odom_pose = self.odom_poses[-1] @ self.last_odom_tran # T_world<-cur
@@ -698,8 +705,8 @@ class SLAMDataset(Dataset):
         else: 
             sys.exit("This function needs to be used from at least the second frame")
         
-        self.last_pose_ref = self.cur_pose_ref # update for the next frame
-        self.estimated_pose_lidar = self.cur_pose_ref
+        self.T_Wl_Llast = self.T_Wl_Lcur # update for the next frame
+        self.estimated_pose_lidar = self.T_Wl_Lcur
 
         # deskewing (motion undistortion using the estimated transformation) for the sampled points for mapping
         # if self.config.deskew and not self.lose_track:
@@ -715,8 +722,8 @@ class SLAMDataset(Dataset):
             # sys.exit("Lose track for a long time, system failed") # FIXME
 
     def update_poses_after_pgo(self, pgo_cur_pose, pgo_poses):
-        self.cur_pose_ref = pgo_cur_pose
-        self.last_pose_ref = pgo_cur_pose # update for next frame
+        self.T_Wl_Lcur = pgo_cur_pose
+        self.T_Wl_Llast = pgo_cur_pose # update for next frame
         self.pgo_poses = pgo_poses # update pgo pose
 
     def update_o3d_map(self):
@@ -737,7 +744,7 @@ class SLAMDataset(Dataset):
             frame_colors_np[~static_mask,0] = 1.0
             frame_o3d.colors = o3d.utility.Vector3dVector(frame_colors_np.astype(np.float64))
 
-        frame_o3d = frame_o3d.transform(self.cur_pose_ref)
+        frame_o3d = frame_o3d.transform(self.T_Wl_Lcur)
 
         if self.config.color_channel > 0:
             frame_colors_np = frame_down_torch[:,3:].detach().cpu().numpy().astype(np.float64)
@@ -758,7 +765,7 @@ class SLAMDataset(Dataset):
         cur_max_z = self.cur_bbx.get_max_bound()[-1]
         cur_min_z = self.cur_bbx.get_min_bound()[-1]
 
-        bbx_center = self.cur_pose_ref[:3,3]
+        bbx_center = self.T_Wl_Lcur[:3,3]
         bbx_min = np.array([bbx_center[0]-self.config.max_range, bbx_center[1]-self.config.max_range, cur_min_z])
         bbx_max = np.array([bbx_center[0]+self.config.max_range, bbx_center[1]+self.config.max_range, cur_max_z])
 

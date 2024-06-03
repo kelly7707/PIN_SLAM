@@ -64,7 +64,8 @@ class PoseGraphManager:
         self.GRAVITY = 9.81 
         params = gtsam.PreintegrationCombinedParams.MakeSharedU(self.GRAVITY) # Dwrong!OXTS coordinates are defined as x = forward, y = right, z = down// see imu dataformat: forward,left,top
         
-        self.imu_calib_initial_pose, self.accBias, self.gyroBias, self.accel_sigma, self.gyro_sigma = self.imu_calibration(dataset)
+        #self.imu_calib_initial_pose
+        self.T_Wi_I0, self.accBias, self.gyroBias, self.accel_sigma, self.gyro_sigma = self.imu_calibration(dataset)
         self.imu_bias = gtsam.imuBias.ConstantBias(self.accBias, self.gyroBias)
         
         # Some arbitrary noise sigmas
@@ -93,7 +94,7 @@ class PoseGraphManager:
         # initial_translation = gtsam.Point3(last_pose[0, 3],last_pose[1, 3],last_pose[2, 3])
         initial_pose = gtsam.Pose3(last_pose)
         if cur_id == 1:
-            initial_pose = gtsam.Pose3(self.imu_calib_initial_pose) #self.imu_calib_initial_pose  # last_pose @ self.imu_calib_initial_pose  
+            initial_pose = gtsam.Pose3(self.T_Wi_I0) #self.imu_calib_initial_pose  # last_pose @ self.imu_calib_initial_pose  
         initial_state = gtsam.NavState(
             initial_pose,
             self.velocity) # https://github.com/borglab/gtsam/blob/4abef9248edc4c49943d8fd8a84c028deb486f4c/python/gtsam/examples/CombinedImuFactorExample.py#L164C9-L168C46 
@@ -243,7 +244,7 @@ class PoseGraphManager:
         self.curr_node_idx = frame_id # make start with 0
         if not self.graph_initials.exists(gtsam.symbol('x', frame_id)): # create if not yet exists
             if frame_id == 0:
-                self.graph_initials.insert(gtsam.symbol('x', frame_id), gtsam.Pose3(self.imu_calib_initial_pose)) # np.eye(4) # self.imu_calib_initial_pose # init_pose  @ self.imu_calib_initial_pose
+                self.graph_initials.insert(gtsam.symbol('x', frame_id), gtsam.Pose3(self.T_Wi_I0)) # np.eye(4) # self.imu_calib_initial_pose # init_pose  @ self.imu_calib_initial_pose
             else:
                 self.graph_initials.insert(gtsam.symbol('x', frame_id), gtsam.Pose3(init_pose))
             # v b 
@@ -377,8 +378,9 @@ class PoseGraphManager:
             print("error %f --> %f:" % (error_before, error_after))
 
         # self.graph_initials = self.graph_optimized # update the initial guess
-        optimized_pose_imuframe = get_node_pose(self.graph_optimized, frame_id) # self.graph_optimized.atPose3(gtsam.symbol('x', frame_id))
-        dataset.last_pose_ref = optimized_pose_imuframe @ np.linalg.inv(dataset.T_pose_to_velo)
+        T_Wi_I_optimized = get_node_pose(self.graph_optimized, frame_id) # self.graph_optimized.atPose3(gtsam.symbol('x', frame_id))
+        
+        dataset.T_Wl_Llast = dataset.T_Wl_Wi @T_Wi_I_optimized @ dataset.T_I_L
         self.velocity = self.graph_optimized.atVector(gtsam.symbol('v', frame_id))
         
         self.imu_bias = self.graph_optimized.atConstantBias(gtsam.symbol('b', frame_id))
@@ -391,12 +393,12 @@ class PoseGraphManager:
         frame_count = self.curr_node_idx+1
         self.pgo_poses = [None] * frame_count # start from 0
         for idx in range(frame_count):
-            self.pgo_poses[idx] = get_node_pose(self.graph_optimized, idx) @ np.linalg.inv(dataset.T_pose_to_velo)
+            self.pgo_poses[idx] = get_node_pose(self.graph_optimized, idx) @ np.linalg.inv(dataset.T_L_I)
         # self.pgo_poses[frame_id] = optimized_pose_imuframe # TODO
-        self.pgo_poses[frame_id] = dataset.last_pose_ref
+        self.pgo_poses[frame_id] = dataset.T_Wl_Llast
 
         self.cur_pose = self.pgo_poses[self.curr_node_idx] 
-        assert np.allclose(self.pgo_poses[self.curr_node_idx], dataset.last_pose_ref, atol=1e-8), "The matrices do not match."
+        assert np.allclose(self.pgo_poses[self.curr_node_idx], dataset.T_Wl_Llast, atol=1e-8), "The matrices do not match."
 
         self.pgo_count += 1
 

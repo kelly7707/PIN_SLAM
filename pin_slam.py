@@ -76,7 +76,7 @@ def run_pin_slam():
     pgm = PoseGraphManager(config, dataset)
     if config.imu_pgo:
         # pgm.add_pose_prior(0, np.eye(4) @ dataset.T_pose_to_velo , fixed=True) # pgm.imu_calib_initial_pose  # True np.eye(4) @ dataset.T_pose_to_velo
-        pgm.add_pose_prior(0, pgm.imu_calib_initial_pose , fixed=True) #pgm.imu_calib_initial_pose
+        pgm.add_pose_prior(0, pgm.T_Wi_I0 , fixed=True) #pgm.imu_calib_initial_pose
         # better removed 
         pgm.add_velocity_prior(0, fixed=False) # False
         pgm.add_bias_prior(0, fixed=False) # False
@@ -110,7 +110,7 @@ def run_pin_slam():
         # I. Load data and preprocessing
         T0 = get_time()
 
-        dataset.read_frame(frame_id, pgm.imu_calib_initial_pose) # change here for ros node
+        dataset.read_frame(frame_id, pgm.T_Wi_I0) # change here for ros node
 
         T1 = get_time()
         
@@ -145,13 +145,13 @@ def run_pin_slam():
 
         # III. Loop detection and pgo 
         if config.imu_pgo:
-            pgm.add_frame_node(used_frame_id, dataset.pgo_poses[used_frame_id] @ dataset.T_pose_to_velo) #  add new node and pose initial guess
-            pgm.init_poses = dataset.pgo_poses @ dataset.T_pose_to_velo # 
+            pgm.add_frame_node(used_frame_id, np.linalg.inv(dataset.T_Wl_Wi) @dataset.pgo_poses[used_frame_id] @ dataset.T_L_I) #  add new node and pose initial guess
+            pgm.init_poses = np.linalg.inv(dataset.T_Wl_Wi) @ dataset.pgo_poses @ dataset.T_L_I #  
 
             if used_frame_id > 0:
                 cur_edge_cov = cur_odom_cov if config.use_reg_cov_mat else None     
                 # --- between factor
-                imu_transform = np.linalg.inv(dataset.T_pose_to_velo) @ dataset.last_odom_tran @ dataset.T_pose_to_velo        
+                imu_transform = dataset.T_I_L @ dataset.last_odom_tran @ dataset.T_L_I        
                 pgm.add_odometry_factor(used_frame_id, used_frame_id-1, imu_transform, cov = cur_edge_cov) # T_p<-c   # TODO: check- cur_edge_cov
                 pgm.estimate_drift(dataset.travel_dist, used_frame_id) # estimate the current drift
 
@@ -352,19 +352,19 @@ def run_pin_slam():
                     sdf_bound = config.surface_sample_range_m * 4.
                     query_sdf_locally = True
                     if o3d_vis.vis_global:
-                        cur_sdf_slice_h = mesher.generate_bbx_sdf_hor_slice(dataset.map_bbx, dataset.cur_pose_ref[2,3]+o3d_vis.sdf_slice_height, slice_res_m, False, -sdf_bound, sdf_bound) # horizontal slice
+                        cur_sdf_slice_h = mesher.generate_bbx_sdf_hor_slice(dataset.map_bbx, dataset.T_Wl_Lcur[2,3]+o3d_vis.sdf_slice_height, slice_res_m, False, -sdf_bound, sdf_bound) # horizontal slice
                     else:
-                        cur_sdf_slice_h = mesher.generate_bbx_sdf_hor_slice(dataset.cur_bbx, dataset.cur_pose_ref[2,3]+o3d_vis.sdf_slice_height, slice_res_m, query_sdf_locally, -sdf_bound, sdf_bound) # horizontal slice (local)
+                        cur_sdf_slice_h = mesher.generate_bbx_sdf_hor_slice(dataset.cur_bbx, dataset.T_Wl_Lcur[2,3]+o3d_vis.sdf_slice_height, slice_res_m, query_sdf_locally, -sdf_bound, sdf_bound) # horizontal slice (local)
                     if config.vis_sdf_slice_v:
-                        cur_sdf_slice_v = mesher.generate_bbx_sdf_ver_slice(dataset.cur_bbx, dataset.cur_pose_ref[0,3], slice_res_m, query_sdf_locally, -sdf_bound, sdf_bound) # vertical slice (local)
+                        cur_sdf_slice_v = mesher.generate_bbx_sdf_ver_slice(dataset.cur_bbx, dataset.T_Wl_Lcur[0,3], slice_res_m, query_sdf_locally, -sdf_bound, sdf_bound) # vertical slice (local)
                         cur_sdf_slice = cur_sdf_slice_h + cur_sdf_slice_v
                     else:
                         cur_sdf_slice = cur_sdf_slice_h
                                 
             pool_pcd = mapper.get_data_pool_o3d(down_rate=17, only_cur_data=o3d_vis.vis_only_cur_samples) if o3d_vis.render_data_pool else None # down rate should be a prime number
             loop_edges = pgm.loop_edges if config.pgo_on else None
-            o3d_vis.update_traj(dataset.cur_pose_ref, dataset.odom_poses, dataset.gt_poses, dataset.pgo_poses, loop_edges)
-            o3d_vis.update(dataset.cur_frame_o3d, dataset.cur_pose_ref, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd)
+            o3d_vis.update_traj(dataset.T_Wl_Lcur, dataset.odom_poses, dataset.gt_poses, dataset.pgo_poses, loop_edges)
+            o3d_vis.update(dataset.cur_frame_o3d, dataset.T_Wl_Lcur, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd)
             
             T8 = get_time()
 
@@ -405,8 +405,8 @@ def run_pin_slam():
     if config.o3d_vis_on:
         while True:
             o3d_vis.ego_view = False
-            o3d_vis.update(dataset.cur_frame_o3d, dataset.cur_pose_ref, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd)
-            o3d_vis.update_traj(dataset.cur_pose_ref, dataset.odom_poses, dataset.gt_poses, dataset.pgo_poses, loop_edges)
+            o3d_vis.update(dataset.cur_frame_o3d, dataset.T_Wl_Lcur, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd)
+            o3d_vis.update_traj(dataset.T_Wl_Lcur, dataset.odom_poses, dataset.gt_poses, dataset.pgo_poses, loop_edges)
 
 if __name__ == "__main__":
 
