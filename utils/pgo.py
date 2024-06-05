@@ -66,6 +66,8 @@ class PoseGraphManager:
         
         #self.imu_calib_initial_pose
         self.T_Wi_I0, self.accBias, self.gyroBias, self.accel_sigma, self.gyro_sigma = self.imu_calibration(dataset)
+        # self.accBias = np.array([ 0,  2.09481966e-04, -1.50556073e-05])
+        # self.gyroBias = np.array([-1.35759117e-04,  1.82918979e-06, -1.39241744e-03]) #-1.39241744e-03
         self.imu_bias = gtsam.imuBias.ConstantBias(self.accBias, self.gyroBias)
         
         # Some arbitrary noise sigmas
@@ -92,9 +94,11 @@ class PoseGraphManager:
         # preintegration
         # initial_rotation = gtsam.Rot3(last_pose[:3, :3])
         # initial_translation = gtsam.Point3(last_pose[0, 3],last_pose[1, 3],last_pose[2, 3])
-        initial_pose = gtsam.Pose3(last_pose)
+        
         if cur_id == 1:
             initial_pose = gtsam.Pose3(self.T_Wi_I0) #self.imu_calib_initial_pose  # last_pose @ self.imu_calib_initial_pose  
+        else:
+            initial_pose = gtsam.Pose3(last_pose)
         initial_state = gtsam.NavState(
             initial_pose,
             self.velocity) # https://github.com/borglab/gtsam/blob/4abef9248edc4c49943d8fd8a84c028deb486f4c/python/gtsam/examples/CombinedImuFactorExample.py#L164C9-L168C46 
@@ -102,7 +106,6 @@ class PoseGraphManager:
         self.imu_v_initial.append(self.velocity) # testing
 
         imu_prediction = self.pim.predict(initial_state, self.imu_bias)
-        
         predicted_pose = imu_prediction.pose() # w2imu
         self.velocity = imu_prediction.velocity()
         self.imu_v_output.append(self.velocity)
@@ -118,11 +121,6 @@ class PoseGraphManager:
             self.pim.resetIntegration() # -- preintegration testing --- 
         return predicted_pose_homo
         
-    
-    def add_combined_IMU_factor(self,cur_id: int, last_id: int): 
-        #
-        self.graph_factors.add(gtsam.CombinedImuFactor(gtsam.symbol('x', last_id), gtsam.symbol('v', last_id), gtsam.symbol('x', cur_id),
-                                gtsam.symbol('v', cur_id), gtsam.symbol('b', last_id), gtsam.symbol('b', cur_id), self.pim))
     
     def imu_calibration(self, dataset: SLAMDataset, imu_calibration_steps=30, visual=False, gravity_align=True):
         #
@@ -160,21 +158,38 @@ class PoseGraphManager:
             # Calculate initial orientation from gravity
             grav_dir = accel_avg / np.linalg.norm(accel_avg) # (normalize to avoid scale, only rot needed)
             grav_target = np.array([0, 0, 1])  # Z-up coordinate system
-            initial_orientation, _ = R.align_vectors([grav_target],[grav_dir]) # ?-? b to a
+            initial_orientation, _ = R.align_vectors([grav_target],[grav_dir]) # ?-? b to a, calibrate imu to gravity aligned position
             
+            # calibrated_initial_pose = np.eye(4)
+            # calibrated_initial_pose[:3, :3] = initial_orientation.as_matrix()#.T
+            
+            # # rotation seems wrong
+            # R_z_90 = np.array([
+            #             [0, 1, 0, 0],
+            #             [-1, 0, 0, 0],
+            #             [0, 0, 1, 0],
+            #             [0, 0, 0, 1]
+            #         ])
+            # calibrated_initial_pose = R_z_90 @ calibrated_initial_pose
+
+            # method 2
+            # Calculate angles - Z-axis is up (z = 1 in gravity vector)
+            pitch = np.arcsin(-grav_dir[0])  # rotation around y-axis
+            roll = np.arcsin(grav_dir[1] / np.cos(pitch))  # rotation around x-axis
+
+            # Create rotation matrices for roll and pitch
+            roll_matrix = R.from_euler('x', roll).as_matrix()
+            pitch_matrix = R.from_euler('y', pitch).as_matrix()
+            
+            # Combine roll and pitch into a single rotation matrix
+            rotation_matrix = pitch_matrix @ roll_matrix
+
+            # Apply rotation matrix to the calibrated initial pose
             calibrated_initial_pose = np.eye(4)
-            calibrated_initial_pose[:3, :3] = initial_orientation.as_matrix()#.T
-            
-            # rotation seems wrong
-            R_z_90 = np.array([
-                        [0, 1, 0, 0],
-                        [-1, 0, 0, 0],
-                        [0, 0, 1, 0],
-                        [0, 0, 0, 1]
-                    ])
-            calibrated_initial_pose = R_z_90 @ calibrated_initial_pose
+            calibrated_initial_pose[:3, :3] = rotation_matrix
             #
-            # print('-----------calibration imu initial pose ---------------',calibrated_initial_pose)
+            
+            print('-----------calibration imu initial pose ---------------',calibrated_initial_pose)
 
             # Compute biases adjusted by initial pose
             # # grav_corrected = np.dot(calibrated_initial_pose[:3, :3].T, np.array([0, 0, self.GRAVITY]))
@@ -183,11 +198,27 @@ class PoseGraphManager:
             # grav_corrected = grav_dir * self.GRAVITY
             accel_bias = accel_avg - grav_corrected
             gyro_bias = gyro_avg
+
+            # rotate 180 degrees around x
+            Rx_180 = np.array([
+                    [1, 0, 0, 0],
+                    [0, -1, 0, 0],
+                    [0, 0, -1, 0],
+                    [0, 0, 0, 1]
+                ])
+            calibrated_initial_pose = Rx_180 @ calibrated_initial_pose 
+            print('-----------calibration imu initial pose ---------------',calibrated_initial_pose)
         else:
             # # Bias computation using average
             gyro_bias = gyro_avg
             accel_bias = accel_avg - grav_vec
-            calibrated_initial_pose = np.eye(4)
+            Rx_180 = np.array([
+                    [1, 0, 0, 0],
+                    [0, -1, 0, 0],
+                    [0, 0, -1, 0],
+                    [0, 0, 0, 1]
+                ])
+            calibrated_initial_pose =Rx_180 # np.eye(4)
 
         ang_vel_array = np.array(ang_vel_list)
         lin_acc_array = np.array(lin_acc_list)
@@ -235,6 +266,12 @@ class PoseGraphManager:
 
         return calibrated_initial_pose, gyro_bias, accel_bias, accel_sigma, gyro_sigma # array(3)
     
+    def add_combined_IMU_factor(self,cur_id: int, last_id: int): 
+        #
+        self.graph_factors.add(gtsam.CombinedImuFactor(gtsam.symbol('x', last_id), gtsam.symbol('v', last_id), gtsam.symbol('x', cur_id),
+                                gtsam.symbol('v', cur_id), gtsam.symbol('b', last_id), gtsam.symbol('b', cur_id), self.pim))
+    
+
     def add_frame_node(self, frame_id, init_pose):
         """create frame pose node and set pose initial guess  
         Args:

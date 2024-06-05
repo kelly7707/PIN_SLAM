@@ -15,10 +15,10 @@ for idx in range(1500):
 all_acc = np.array(all_acc)
 all_gyro = np.array(all_gyro)
 
-accBias = np.array([ 0.95181334, -0.01282453, -0.04769801])
-gyroBias = np.array([ 2.16058228e-04,  2.09481966e-04, -1.50556073e-05])
-acc_sigma = np.array([0.01415831, 0.02812515, 0.01154988])
-gyro_sigma = np.array([0.00108005, 0.00063807, 0.00116715])
+accBias = np.array([ 2.16058228e-04,  2.09481966e-04, -1.50556073e-05]) # np.array([ 0.95181334, -0.01282453, -0.04769801])
+gyroBias = np.array([-1.35759117e-04,  1.82918979e-06, -1.39241744e-03]) # np.array([ 2.16058228e-04,  2.09481966e-04, -1.50556073e-05])
+acc_sigma = np.array([0.01415831, 0.02812515, 0.01154988]) # np.array([0.01415831, 0.02812515, 0.01154988])
+gyro_sigma = np.array([0.00108005, 0.00063807, 0.00116715]) #np.array([0.00108005, 0.00063807, 0.00116715])
 
 gyro_data = all_gyro
 acc_data = all_acc
@@ -57,9 +57,9 @@ axs[0].scatter(highlight_indices, gyro_data[highlight_indices, 2], color='b', s=
 axs[1].plot(indices, acc_data[:, 0], label='Accel X', color='r')
 axs[1].plot(indices, acc_data[:, 1], label='Accel Y', color='g')
 axs[1].plot(indices, acc_data[:, 2], label='Accel Z', color='b')
-axs[1].axhline(accBias[0], color='r', linestyle='--', label='Bias X + Gravity')
+axs[1].axhline(accBias[0], color='r', linestyle='--', label='Bias X ')
 axs[1].axhline(accBias[1], color='g', linestyle='--', label='Bias Y')
-axs[1].axhline(accBias[2] + 9.8, color='b', linestyle='--', label='Bias Z')
+axs[1].axhline(accBias[2] + 9.8, color='b', linestyle='--', label='Bias Z+ Gravity')
 axs[1].set_title('Accelerometer Data')
 axs[1].set_xlabel('Time [s]')
 axs[1].set_ylabel('Linear Acceleration [m/s^2]')

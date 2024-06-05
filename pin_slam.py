@@ -110,7 +110,7 @@ def run_pin_slam():
         # I. Load data and preprocessing
         T0 = get_time()
 
-        dataset.read_frame(frame_id, pgm.T_Wi_I0) # change here for ros node
+        dataset.read_frame(frame_id) # change here for ros node
 
         T1 = get_time()
         

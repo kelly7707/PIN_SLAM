@@ -94,6 +94,7 @@ class SLAMDataset(Dataset):
         # self.T_pose_to_velo = T_cam_to_pose['image_00'] @ np.linalg.inv(T_cam_to_velo) #from imu to cam @ from cam to lidar
         self.T_L_I = T_cam_to_velo @ np.linalg.inv(T_cam_to_pose['image_00']) 
         self.T_I_L = np.linalg.inv(self.T_L_I)
+        
         # print('-------transforamtion from reference -------',self.T_pose_to_velo) # checked: correct
         # fake correct
         # self.T_pose_to_velo = np.linalg.inv(T_cam_to_velo) @ T_cam_to_pose['image_00'] 
@@ -201,6 +202,9 @@ class SLAMDataset(Dataset):
         self.vidual_poses = []
         self.visual_poses_direction = []
         self.visual_lidar_poses = []
+        self.visual_lidar_poses_direction = []
+        self.visual_imu_frame=[]
+        self.visual_imu_frame_direction=[]
         self.vidual_gtposes = []
 
         # testing tracking
@@ -251,7 +255,7 @@ class SLAMDataset(Dataset):
 
            
 
-    def read_frame(self, frame_id, calibration_imu_initial):
+    def read_frame(self, frame_id):
         
         # load gt pose if available
         if self.gt_pose_provided: # default false
@@ -285,9 +289,6 @@ class SLAMDataset(Dataset):
         if frame_id>0:
             # IMU--1 load IMU(kitti)
             sync_imu_filename = os.path.join(self.config.sync_imu_path, 'data', '%010d.txt'%frame_id)
-            # # # sync_imu,ts = loadOxtsData(self.config.sync_imu_path)
-            # # cur_sync_imu = np.loadtxt(sync_imu_filename) # imu data at current frame 
-            # # self.cur_sync_imu_torch = torch.tensor(cur_sync_imu, device=self.device, dtype=self.dtype)
             
             start_index = find_closest_timestamp_index(self.ts_pc[frame_id-1],self.ts_rawimu)
             end_index = find_closest_timestamp_index(self.ts_pc[frame_id],self.ts_rawimu)
@@ -341,55 +342,57 @@ class SLAMDataset(Dataset):
         self.imu_curinter['gt_pos'] = torch.tensor(np.array([self.oxts_raw_imu_curinterval[i].T_w_imu[0:3, 3]
                                              for i in range(self.seq_len)]))
         
-        # # -- visual data & bias
-        # if start_index >=35:
-        #     gyro_data = self.imu_curinter['gyro']
-        #     acc_data = self.imu_curinter['acc']
-        #     timestamps = np.cumsum(self.imu_curinter['dt'])  # Accumulating the time differences to get the timestamps
+        # -- visual data & bias
+        visual_data_bias = False
+        if visual_data_bias:
+            if start_index >=35:
+                gyro_data = self.imu_curinter['gyro']
+                acc_data = self.imu_curinter['acc']
+                timestamps = np.cumsum(self.imu_curinter['dt'])  # Accumulating the time differences to get the timestamps
 
-        #     gyroBias = np.mean(self.imu_curinter['gyro'], axis=0)
-        #     accBias = np.mean(self.imu_curinter['acc'], axis=0) - np.array([0, 0, 9.8])
-        #     gyro_sigma = (gyro_data.max(axis=0) - gyro_data.min(axis=0)) / 2
-        #     acc_sigma = (acc_data.max(axis=0) - acc_data.min(axis=0)) / 2
-        #     # Plotting the IMU data
-        #     fig, axs = plt.subplots(2, 1, figsize=(10, 8))
-        #     # Gyroscope data
-        #     axs[0].plot(timestamps, gyro_data[:, 0], label='Gyro X', color='r')
-        #     axs[0].plot(timestamps, gyro_data[:, 1], label='Gyro Y', color='g')
-        #     axs[0].plot(timestamps, gyro_data[:, 2], label='Gyro Z', color='b')
-        #     axs[0].axhline(gyroBias[0], color='r', linestyle='--', label='Bias X')
-        #     axs[0].axhline(gyroBias[1], color='g', linestyle='--', label='Bias Y')
-        #     axs[0].axhline(gyroBias[2], color='b', linestyle='--', label='Bias Z')
-        #     axs[0].set_title('Gyroscope Data')
-        #     axs[0].set_xlabel('Time [s]')
-        #     axs[0].set_ylabel('Angular Velocity [rad/s]')
-        #     axs[0].legend()
-        #     axs[0].grid(True)
-        #     # Display gyro sigmas on the plot
-        #     axs[0].text(0.05, 0.95, f'Gyro Bias X: {gyroBias[0]:.6f}\nGyro Bias Y: {gyroBias[1]:.6f}\nGyro Bias Z: {gyroBias[2]:.6f}\n'
-        #                             f'Gyro Sigma X: {gyro_sigma[0]:.6f}\nGyro Sigma Y: {gyro_sigma[1]:.6f}\nGyro Sigma Z: {gyro_sigma[2]:.6f}',
-        #                 transform=axs[0].transAxes, fontsize=10, verticalalignment='top')
+                gyroBias = np.mean(self.imu_curinter['gyro'], axis=0)
+                accBias = np.mean(self.imu_curinter['acc'], axis=0) - np.array([0, 0, 9.8])
+                gyro_sigma = (gyro_data.max(axis=0) - gyro_data.min(axis=0)) / 2
+                acc_sigma = (acc_data.max(axis=0) - acc_data.min(axis=0)) / 2
+                # Plotting the IMU data
+                fig, axs = plt.subplots(2, 1, figsize=(10, 8))
+                # Gyroscope data
+                axs[0].plot(timestamps, gyro_data[:, 0], label='Gyro X', color='r')
+                axs[0].plot(timestamps, gyro_data[:, 1], label='Gyro Y', color='g')
+                axs[0].plot(timestamps, gyro_data[:, 2], label='Gyro Z', color='b')
+                axs[0].axhline(gyroBias[0], color='r', linestyle='--', label='Bias X')
+                axs[0].axhline(gyroBias[1], color='g', linestyle='--', label='Bias Y')
+                axs[0].axhline(gyroBias[2], color='b', linestyle='--', label='Bias Z')
+                axs[0].set_title('Gyroscope Data')
+                axs[0].set_xlabel('Time [s]')
+                axs[0].set_ylabel('Angular Velocity [rad/s]')
+                axs[0].legend()
+                axs[0].grid(True)
+                # Display gyro sigmas on the plot
+                axs[0].text(0.05, 0.95, f'Gyro Bias X: {gyroBias[0]:.6f}\nGyro Bias Y: {gyroBias[1]:.6f}\nGyro Bias Z: {gyroBias[2]:.6f}\n'
+                                        f'Gyro Sigma X: {gyro_sigma[0]:.6f}\nGyro Sigma Y: {gyro_sigma[1]:.6f}\nGyro Sigma Z: {gyro_sigma[2]:.6f}',
+                            transform=axs[0].transAxes, fontsize=10, verticalalignment='top')
 
-        #     # Accelerometer data
-        #     axs[1].plot(timestamps, acc_data[:, 0], label='Accel X', color='r')
-        #     axs[1].plot(timestamps, acc_data[:, 1], label='Accel Y', color='g')
-        #     axs[1].plot(timestamps, acc_data[:, 2], label='Accel Z', color='b')
-        #     axs[1].axhline(accBias[0], color='r', linestyle='--', label='Bias X + Gravity')
-        #     axs[1].axhline(accBias[1], color='g', linestyle='--', label='Bias Y')
-        #     axs[1].axhline(accBias[2] + 9.8, color='b', linestyle='--', label='Bias Z')
-        #     axs[1].set_title('Accelerometer Data')
-        #     axs[1].set_xlabel('Time [s]')
-        #     axs[1].set_ylabel('Linear Acceleration [m/s^2]')
-        #     axs[1].legend()
-        #     axs[1].grid(True)
-        #     # Display accel sigmas on the plot
-        #     axs[1].text(0.05, 0.95, f'Accel Bias X: {accBias[0]:.6f}\nAccel Bias Y: {accBias[1]:.6f}\nAccel Bias Z: {accBias[2]:.6f}\n'
-        #                             f'Accel Sigma X: {acc_sigma[0]:.6f}\nAccel Sigma Y: {acc_sigma[1]:.6f}\nAccel Sigma Z: {acc_sigma[2]:.6f}',
-        #                 transform=axs[1].transAxes, fontsize=10, verticalalignment='top')
+                # Accelerometer data
+                axs[1].plot(timestamps, acc_data[:, 0], label='Accel X', color='r')
+                axs[1].plot(timestamps, acc_data[:, 1], label='Accel Y', color='g')
+                axs[1].plot(timestamps, acc_data[:, 2], label='Accel Z', color='b')
+                axs[1].axhline(accBias[0], color='r', linestyle='--', label='Bias X + Gravity')
+                axs[1].axhline(accBias[1], color='g', linestyle='--', label='Bias Y')
+                axs[1].axhline(accBias[2] + 9.8, color='b', linestyle='--', label='Bias Z')
+                axs[1].set_title('Accelerometer Data')
+                axs[1].set_xlabel('Time [s]')
+                axs[1].set_ylabel('Linear Acceleration [m/s^2]')
+                axs[1].legend()
+                axs[1].grid(True)
+                # Display accel sigmas on the plot
+                axs[1].text(0.05, 0.95, f'Accel Bias X: {accBias[0]:.6f}\nAccel Bias Y: {accBias[1]:.6f}\nAccel Bias Z: {accBias[2]:.6f}\n'
+                                        f'Accel Sigma X: {acc_sigma[0]:.6f}\nAccel Sigma Y: {acc_sigma[1]:.6f}\nAccel Sigma Z: {acc_sigma[2]:.6f}',
+                            transform=axs[1].transAxes, fontsize=10, verticalalignment='top')
 
 
-        #     plt.tight_layout()
-        #     plt.show()
+                plt.tight_layout()
+                plt.show()
 
 
     
@@ -474,9 +477,11 @@ class SLAMDataset(Dataset):
         # prepare for the registration
         if self.processed_frame == 0: # initialize the first frame, no tracking yet
             #
-            # self.T_Wl_Lcur = pgm.imu_calib_initial_pose @ np.linalg.inv(self.T_pose_t  o_velo)
-            self.T_Wl_Wi=  np.linalg.inv( pgm.T_Wi_I0 @ self.T_I_L) # wi to wl
+            # self.T_Wl_Lcur = pgm.imu_calib_initial_pose @ np.linalg.inv(self.T_pose_to_velo)
             # self.T_Wl_Lcur = np.linalg.inv(self.T_pose_to_velo)
+            # self.T_Wl_Wi=  np.linalg.inv( pgm.T_Wi_I0 @ self.T_I_L) # wi to wl
+            self.T_Wl_Wi= self.T_L_I @ np.linalg.inv( pgm.T_Wi_I0 ) # wi to wl
+            
             #
             if self.config.track_on:
                 self.odom_poses.append(self.T_Wl_Lcur)
@@ -499,7 +504,8 @@ class SLAMDataset(Dataset):
             # init_imu_integrator['vel'] = torch.zeros(3)
             # self.last_imu_integrator_vel = init_imu_integrator['vel']
             # self.imu_preinte_continuous_test = np.eye(4) 
-            self.imu_preinte_continuous_test = np.linalg.inv(self.T_L_I)
+            # self.imu_preinte_continuous_test = np.linalg.inv(self.T_L_I)
+            self.imu_preinte_continuous_test = self.T_Wl_Llast
 
         elif self.processed_frame > 0: 
             # pose initial guess
@@ -531,31 +537,33 @@ class SLAMDataset(Dataset):
 
 
             # # IMU- TEST preintegration
-            # last_pose_w2imu = self.imu_preinte_continuous_test @ self.T_pose_to_velo
-            # # last_pose_w2imu = self.imu_preinte_continuous_test
-            # initial_guess_w2imu = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=last_pose_w2imu, cur_id=self.processed_frame)
-            # initial_guess_w2lidar = initial_guess_w2imu  @ np.linalg.inv(self.T_pose_to_velo)
-            # self.imu_preinte_continuous_test = initial_guess_w2lidar
-            
+            # last_pose_w2imu = self.imu_preinte_continuous_test
+            last_pose_w2imu = np.linalg.inv(self.T_Wl_Wi) @ self.imu_preinte_continuous_test @ self.T_L_I 
+            T_Wi_I = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=last_pose_w2imu, cur_id=self.processed_frame)
+            T_Wl_L = self.T_Wl_Wi @ T_Wi_I @ self.T_I_L
+            # T_Wl_L = T_Wi_I
+            self.imu_preinte_continuous_test = T_Wl_L
+            T_Wl_I = self.T_Wl_Wi @ T_Wi_I
             # # IMU--2 pose initial guess
             # # transform to imu frame
-            # last_pose_w2imu = self.T_Wl_Llast @ np.linalg.inv(self.T_pose_to_velo) # TODO: order? -wrong
-            # last_pose_w2imu = self.T_Wl_Llast @ self.T_pose_to_velo 
-            T_Wi_I = np.linalg.inv(self.T_Wl_Wi) @ self.T_Wl_Llast @ self.T_L_I 
-            if frame_id==1:
-                assert np.allclose(T_Wi_I, pgm.T_Wi_I0)
-            # last_pose_w2imu = self.imu_preinte_continuous_test @ self.T_pose_to_velo
-            T_Wi_I = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=T_Wi_I, cur_id=self.processed_frame)
-            T_Wl_L = self.T_Wl_Wi @ T_Wi_I @ self.T_I_L
+            # T_Wi_I = np.linalg.inv(self.T_Wl_Wi) @ self.T_Wl_Llast @ self.T_L_I 
+            # if frame_id==1: 
+            #     assert np.allclose(T_Wi_I, pgm.T_Wi_I0)
+            # # last_pose_w2imu = self.imu_preinte_continuous_test @ self.T_pose_to_velo
+            # T_Wi_I = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=T_Wi_I, cur_id=self.processed_frame)
+            # T_Wl_L = self.T_Wl_Wi @ T_Wi_I @ self.T_I_L
             
-            cur_pose_init_guess = T_Wl_L
-            self.imu_preinte_continuous_test = T_Wl_L
+            # cur_pose_init_guess = T_Wl_L
+
 
             # --- testing: IMU preinte vidual
             poses = T_Wl_L  #initial_guess_w2imu # initial_guess_w2lidar # output, wrt. initial imu frame
             self.vidual_poses.append(poses[:3, 3])
             self.visual_poses_direction.append(poses[:3, :3])
             self.visual_lidar_poses.append(self.estimated_pose_lidar[:3, 3])
+            self.visual_lidar_poses_direction.append(self.estimated_pose_lidar[:3, :3])
+            self.visual_imu_frame.append(T_Wl_I[:3, 3])
+            self.visual_imu_frame_direction.append(T_Wl_I[:3, :3])
             # self.vidual_gtposes.append(poses_gt)
             # visual_poses_np = np.concatenate(self.vidual_poses, axis=0)
             # visual_gtposes_np = np.concatenate(self.vidual_gtposes, axis=0)
@@ -566,6 +574,9 @@ class SLAMDataset(Dataset):
                 visual_poses_np = np.array(self.vidual_poses)
                 visual_poses_direction_np = np.array(self.visual_poses_direction)
                 visual_poses_lidar_np = np.array(self.visual_lidar_poses)
+                visual_poses_dirction_lidar_np = np.array(self.visual_lidar_poses_direction)
+                visual_imu_frame_np = np.array(self.visual_imu_frame)
+                visual_imu_frame_direction_np = np.array(self.visual_imu_frame_direction)
                 if plot == '2d':
                     plt.figure(figsize=(5, 5))                
 
@@ -575,7 +586,7 @@ class SLAMDataset(Dataset):
 
                     plt.plot(visual_poses_np[0,0], visual_poses_np[0,1], 'bo', markersize=10)
                     plt.plot(visual_poses_np[:,0], visual_poses_np[:,1], 'b')  # Blue line for the trajectory
-                    # plt.plot(visual_poses_lidar_np[:,0], visual_poses_lidar_np[:,1], 'r')
+                    plt.plot(visual_poses_lidar_np[:,0], visual_poses_lidar_np[:,1], 'r')
 
                     plt.title("Gtsam IMU Integrator")
                     # plt.legend(["PyPose", "Ground Truth"])
@@ -597,6 +608,8 @@ class SLAMDataset(Dataset):
                     # Plot the poses with orientation vectors
                     for i in range(len(visual_poses_np)):
                         plot_frame(ax, visual_poses_direction_np[i], visual_poses_np[i], 'Pose', 'k', ['r', 'g', 'b'], length=0.05)
+                        plot_frame(ax, visual_poses_dirction_lidar_np[i], visual_poses_lidar_np[i], 'Pose', 'k', ['r', 'g', 'b'], length=0.05)
+                        plot_frame(ax, visual_imu_frame_direction_np[i], visual_imu_frame_np[i], 'Pose', 'k', ['r', 'g', 'b'], length=0.05)
 
                     # Optionally, plot the LiDAR poses
                     # ax.plot3D(visual_poses_lidar_np[:, 0], visual_poses_lidar_np[:, 1], visual_poses_lidar_np[:, 2], 'c')
@@ -610,7 +623,7 @@ class SLAMDataset(Dataset):
                     # Save the figure
                     frame_id = 0  # Replace with your actual frame ID
                     figure_path = os.path.join('/home/zjw/master_thesis/visual/testing', f'gtsam_IMU_preintegration_{frame_id}.png')
-                    plt.savefig(figure_path)
+                    # plt.savefig(figure_path)
                     print("Saved to", figure_path)
 
                     # Show the plot

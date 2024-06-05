@@ -94,9 +94,19 @@ R_z_90 = np.array([
 # Calculate new transformation matrix
 calibration_IMU_initial_pose = R_z_90 @ calibration_IMU_initial_pose
 
+calibration_IMU_roll_pitch = np.array([[ 9.95280614e-01  ,1.27477536e-04 ,
+-9.70385609e-02,  0.00000000e+00],
+ [ 0.00000000e+00,  9.99999137e-01 , 1.31367804e-03 , 0.00000000e+00],
+ [ 9.70386446e-02 ,-1.30747829e-03 , 9.95279756e-01 , 0.00000000e+00],
+ [ 0.00000000e+00 , 0.00000000e+00,  0.00000000e+00 , 1.00000000e+00]])
 
-
-T=calibration_IMU_initial_pose
+calib_IMU_real = np.array([[ 9.95280614e-01 ,-1.27477536e-04  ,9.70385609e-02  ,0.00000000e+00],
+ [ 0.00000000e+00 ,-9.99999137e-01, -1.31367804e-03 , 0.00000000e+00],
+ [ 9.70386446e-02 , 1.30747829e-03 ,-9.95279756e-01 , 0.00000000e+00],
+ [ 0.00000000e+00 , 0.00000000e+00 , 0.00000000e+00 , 1.00000000e+00]])
+# T=np.linalg.inv(calibration_IMU_initial_pose)
+# T = np.linalg.inv(calibration_IMU_roll_pitch)
+T= calib_IMU_real
 # Extract rotation and translation components
 R = T[:3, :3]
 t = T[:3, 3]
