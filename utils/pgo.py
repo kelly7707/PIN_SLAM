@@ -199,14 +199,14 @@ class PoseGraphManager:
             accel_bias = accel_avg - grav_corrected
             gyro_bias = gyro_avg
 
-            # rotate 180 degrees around x
-            Rx_180 = np.array([
-                    [1, 0, 0, 0],
-                    [0, -1, 0, 0],
-                    [0, 0, -1, 0],
-                    [0, 0, 0, 1]
-                ])
-            calibrated_initial_pose = Rx_180 @ calibrated_initial_pose 
+            # # rotate 180 degrees around x
+            # Rx_180 = np.array([
+            #         [1, 0, 0, 0],
+            #         [0, -1, 0, 0],
+            #         [0, 0, -1, 0],
+            #         [0, 0, 0, 1]
+            #     ])
+            # calibrated_initial_pose = Rx_180 @ calibrated_initial_pose 
             print('-----------calibration imu initial pose ---------------',calibrated_initial_pose)
         else:
             # # Bias computation using average

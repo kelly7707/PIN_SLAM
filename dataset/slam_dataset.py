@@ -93,6 +93,11 @@ class SLAMDataset(Dataset):
 
         # self.T_pose_to_velo = T_cam_to_pose['image_00'] @ np.linalg.inv(T_cam_to_velo) #from imu to cam @ from cam to lidar
         self.T_L_I = T_cam_to_velo @ np.linalg.inv(T_cam_to_pose['image_00']) 
+
+        # translation= np.array([[0.81,-0.32,0.8]])
+        # homo = np.eye(4)
+        # homo[:3,3]=translation
+        self.T_L_I[:3,:3] = np.eye(3)
         self.T_I_L = np.linalg.inv(self.T_L_I)
         
         # print('-------transforamtion from reference -------',self.T_pose_to_velo) # checked: correct
@@ -536,24 +541,27 @@ class SLAMDataset(Dataset):
                 # init_imu_integrator['vel'] = self.last_imu_integrator_vel
 
 
-            # # IMU- TEST preintegration
-            # last_pose_w2imu = self.imu_preinte_continuous_test
-            last_pose_w2imu = np.linalg.inv(self.T_Wl_Wi) @ self.imu_preinte_continuous_test @ self.T_L_I 
-            T_Wi_I = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=last_pose_w2imu, cur_id=self.processed_frame)
-            T_Wl_L = self.T_Wl_Wi @ T_Wi_I @ self.T_I_L
-            # T_Wl_L = T_Wi_I
-            self.imu_preinte_continuous_test = T_Wl_L
-            T_Wl_I = self.T_Wl_Wi @ T_Wi_I
+            # # # IMU- TEST preintegration
+            # # last_pose_w2imu = self.imu_preinte_continuous_test
+            # last_pose_w2imu = np.linalg.inv(self.T_Wl_Wi) @ self.imu_preinte_continuous_test @ self.T_L_I 
+            # T_Wi_I = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=last_pose_w2imu, cur_id=self.processed_frame)
+            # T_Wl_L = self.T_Wl_Wi @ T_Wi_I @ self.T_I_L
+            # # T_Wl_L = T_Wi_I
+            # self.imu_preinte_continuous_test = T_Wl_L
+            # T_Wl_I = self.T_Wl_Wi @ T_Wi_I
+
+
             # # IMU--2 pose initial guess
             # # transform to imu frame
-            # T_Wi_I = np.linalg.inv(self.T_Wl_Wi) @ self.T_Wl_Llast @ self.T_L_I 
-            # if frame_id==1: 
-            #     assert np.allclose(T_Wi_I, pgm.T_Wi_I0)
-            # # last_pose_w2imu = self.imu_preinte_continuous_test @ self.T_pose_to_velo
-            # T_Wi_I = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=T_Wi_I, cur_id=self.processed_frame)
-            # T_Wl_L = self.T_Wl_Wi @ T_Wi_I @ self.T_I_L
+            T_Wi_I = np.linalg.inv(self.T_Wl_Wi) @ self.T_Wl_Llast @ self.T_L_I 
+            if frame_id==1: 
+                assert np.allclose(T_Wi_I, pgm.T_Wi_I0)
+            # last_pose_w2imu = self.imu_preinte_continuous_test @ self.T_pose_to_velo
+            T_Wi_I = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=T_Wi_I, cur_id=self.processed_frame)
+            T_Wl_L = self.T_Wl_Wi @ T_Wi_I @ self.T_I_L
+            T_Wl_I = self.T_Wl_Wi @ T_Wi_I
             
-            # cur_pose_init_guess = T_Wl_L
+            cur_pose_init_guess = T_Wl_L
 
 
             # --- testing: IMU preinte vidual

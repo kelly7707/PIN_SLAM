@@ -72,6 +72,8 @@ T_posetolidar_right = np.array([[ 0.99992906,0.0057743 ,  0.01041756 , 0.7710493
         [ 0.01040029 , 0.00301357, -0.99994137, -0.83628022],
         [ 0.     ,     0.     ,     0.    ,      1.        ]])
 
+T_posetolidar_right[:3,:3]=np.eye(3)
+
 T_posetolidar_myfakeright = np.array([[-0.9967767,-0.00453018, 0.080098  ,  0.27036781],
  [-0.01046623 ,-0.98252872, -0.18581651 , 0.54510788],
  [ 0.07954037 ,-0.18605589  ,0.97931432 ,-0.73124351],
@@ -106,7 +108,7 @@ calib_IMU_real = np.array([[ 9.95280614e-01 ,-1.27477536e-04  ,9.70385609e-02  ,
  [ 0.00000000e+00 , 0.00000000e+00 , 0.00000000e+00 , 1.00000000e+00]])
 # T=np.linalg.inv(calibration_IMU_initial_pose)
 # T = np.linalg.inv(calibration_IMU_roll_pitch)
-T= calib_IMU_real
+T= T_posetolidar_right
 # Extract rotation and translation components
 R = T[:3, :3]
 t = T[:3, 3]
