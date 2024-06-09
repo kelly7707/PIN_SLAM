@@ -268,8 +268,6 @@ class SLAMDataset(Dataset):
             self.gt_poses.append(self.T_Wl_Lcur)
         else: # or initialize with identity
             self.T_Wl_Lcur = np.eye(4) # default
-            # self.T_Wl_Lcur =  np.linalg.inv(self.T_pose_to_velo)
-            # self.T_Wl_Lcur = calibration_imu_initial @ np.linalg.inv(self.T_pose_to_velo)
         self.cur_pose_torch = torch.tensor(self.T_Wl_Lcur, device=self.device, dtype=self.dtype)
 
         point_ts = None
@@ -335,17 +333,17 @@ class SLAMDataset(Dataset):
                                   self.oxts_raw_imu_curinterval[i].packet.az]
                                   for i in range(self.seq_len)])
         # # TODO: understand the gt... and Tw_imu?
-        self.imu_curinter['gt_rot'] = pp.euler2SO3(torch.tensor([[self.oxts_raw_imu_curinterval[i].packet.roll,
-                                                  self.oxts_raw_imu_curinterval[i].packet.pitch,
-                                                  self.oxts_raw_imu_curinterval[i].packet.yaw]
-                                                  for i in range(self.seq_len)]))
-        self.imu_curinter['gt_vel'] = self.imu_curinter['gt_rot'] @ torch.tensor([[self.oxts_raw_imu_curinterval[i].packet.vf,
-                                                   self.oxts_raw_imu_curinterval[i].packet.vl,
-                                                   self.oxts_raw_imu_curinterval[i].packet.vu]
-                                                   for i in range(self.seq_len)])
-        print('-------------------', self.imu_curinter['gt_vel'][:1])
-        self.imu_curinter['gt_pos'] = torch.tensor(np.array([self.oxts_raw_imu_curinterval[i].T_w_imu[0:3, 3]
-                                             for i in range(self.seq_len)]))
+        # self.imu_curinter['gt_rot'] = pp.euler2SO3(torch.tensor([[self.oxts_raw_imu_curinterval[i].packet.roll,
+        #                                           self.oxts_raw_imu_curinterval[i].packet.pitch,
+        #                                           self.oxts_raw_imu_curinterval[i].packet.yaw]
+        #                                           for i in range(self.seq_len)]))
+        # self.imu_curinter['gt_vel'] = self.imu_curinter['gt_rot'] @ torch.tensor([[self.oxts_raw_imu_curinterval[i].packet.vf,
+        #                                            self.oxts_raw_imu_curinterval[i].packet.vl,
+        #                                            self.oxts_raw_imu_curinterval[i].packet.vu]
+        #                                            for i in range(self.seq_len)])
+        # print('-------------------', self.imu_curinter['gt_vel'][:1])
+        # self.imu_curinter['gt_pos'] = torch.tensor(np.array([self.oxts_raw_imu_curinterval[i].T_w_imu[0:3, 3]
+        #                                      for i in range(self.seq_len)]))
         
         # -- visual data & bias
         visual_data_bias = False
@@ -417,7 +415,7 @@ class SLAMDataset(Dataset):
                     yaw = -torch.atan2(self.cur_point_cloud_torch[:,1], self.cur_point_cloud_torch[:,0])  # y, x -> rad (clockwise)
                     if self.config.lidar_type_guess == "velodyne": # default
                         # for velodyne LiDAR (from -x axis, clockwise)
-                        self.cur_point_ts_torch = 0.5 * (yaw / math.pi + 1.0) # [0,1]
+                        self.cur_point_ts_torch = 0.5 * (yaw / math.pi + 1.0) # [0,1]; yaw / math.pi-> [-1,1]
                         if not self.silence:
                             print("Velodyne point cloud deskewed")
                     else:
@@ -497,51 +495,27 @@ class SLAMDataset(Dataset):
             self.travel_dist.append(0.)
             self.T_Wl_Llast = self.T_Wl_Lcur
 
-
+            # # Lidar test
             self.estimated_pose_lidar = self.T_Wl_Lcur
-            # # IMU frame0 initialization
-            # # test imu preintegration (imu coord: x = forward, y = right, z = down)
-            # init_imu_integrator['pos'] = torch.zeros(3) #wrong. + lidar to imu
-            # init_imu_integrator['rot'] = pp.identity_SO3()
-            # self.last_imu_integrator_pos = init_imu_integrator['pos']
-            # self.last_imu_integrator_rot = init_imu_integrator['rot']
-
-            # init_imu_integrator['vel'] = torch.zeros(3)
-            # self.last_imu_integrator_vel = init_imu_integrator['vel']
-            # self.imu_preinte_continuous_test = np.eye(4) 
-            # self.imu_preinte_continuous_test = np.linalg.inv(self.T_L_I)
+            # # IMU test - frame0 initialization
             self.imu_preinte_continuous_test = self.T_Wl_Llast
 
         elif self.processed_frame > 0: 
-            # pose initial guess
-            # original - PIN SLAM
-            last_tran = np.linalg.norm(self.last_odom_tran[:3,3])  # from update_odom_pose()
-            # if self.config.uniform_motion_on and not self.lose_track and last_tran > 0.2 * self.config.voxel_size_m: # apply uniform motion model here
-            if self.config.uniform_motion_on and not self.lose_track: # default: apply uniform motion model here
-                cur_pose_init_guess = self.T_Wl_Llast @ self.last_odom_tran # T_world<-cur = T_world<-last @ T_last<-cur
-            else: # static initial guess
-                cur_pose_init_guess = self.T_Wl_Llast
+            # # pose initial guess
+            # # original - PIN SLAM
+            # last_tran = np.linalg.norm(self.last_odom_tran[:3,3])  # from update_odom_pose()
+            # # if self.config.uniform_motion_on and not self.lose_track and last_tran > 0.2 * self.config.voxel_size_m: # apply uniform motion model here
+            # if self.config.uniform_motion_on and not self.lose_track: # default: apply uniform motion model here
+            #     cur_pose_init_guess = self.T_Wl_Llast @ self.last_odom_tran # T_world<-cur = T_world<-last @ T_last<-cur
+            # else: # static initial guess
+            #     cur_pose_init_guess = self.T_Wl_Llast
 
             if not self.config.track_on and self.gt_pose_provided: # default off
                 cur_pose_init_guess = self.poses_ref[frame_id]
 
             
             # # test imu preintegration (world coord: east-north-up / x = forward, y = left, z = up)
-            # if frame_id == 1:
-            #     # init_imu_integrator['vel'] = self.imu_curinter['gt_vel'][:1]
-            #     init_imu_integrator['pos'] = self.imu_curinter['gt_pos'][:1]
-            #     init_imu_integrator['rot'] = self.imu_curinter['gt_rot'][:1]
-            #     self.imu_preinte_continuous_test[:3,:3] = init_imu_integrator['rot'].matrix()
-            #     self.imu_preinte_continuous_test[:3,3] = init_imu_integrator['pos'].numpy()
-            # else:
-                # last_pose_in_imu = self.imu_preinte_continuous_test
-                # init_imu_integrator['pos'] = torch.tensor(last_pose_in_imu[:3,3], dtype=self.dtype)
-                # init_imu_integrator['rot'] = pp.mat2SO3(torch.tensor(last_pose_in_imu[:3,:3], dtype=self.dtype))
-                
-                # init_imu_integrator['vel'] = self.last_imu_integrator_vel
-
-
-            # # # IMU- TEST preintegration
+            # # IMU- TEST preintegration
             # # last_pose_w2imu = self.imu_preinte_continuous_test
             # last_pose_w2imu = np.linalg.inv(self.T_Wl_Wi) @ self.imu_preinte_continuous_test @ self.T_L_I 
             # T_Wi_I = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=last_pose_w2imu, cur_id=self.processed_frame)
@@ -553,13 +527,13 @@ class SLAMDataset(Dataset):
 
             # # IMU--2 pose initial guess
             # # transform to imu frame
-            T_Wi_I = np.linalg.inv(self.T_Wl_Wi) @ self.T_Wl_Llast @ self.T_L_I 
+            T_Wi_I_last = np.linalg.inv(self.T_Wl_Wi) @ self.T_Wl_Llast @ self.T_L_I 
             if frame_id==1: 
-                assert np.allclose(T_Wi_I, pgm.T_Wi_I0)
+                assert np.allclose(T_Wi_I_last, pgm.T_Wi_I0)
             # last_pose_w2imu = self.imu_preinte_continuous_test @ self.T_pose_to_velo
-            T_Wi_I = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=T_Wi_I, cur_id=self.processed_frame)
-            T_Wl_L = self.T_Wl_Wi @ T_Wi_I @ self.T_I_L
-            T_Wl_I = self.T_Wl_Wi @ T_Wi_I
+            T_Wi_I_cur = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=T_Wi_I_last, cur_id=self.processed_frame)
+            T_Wl_L = self.T_Wl_Wi @ T_Wi_I_cur @ self.T_I_L
+            T_Wl_I = self.T_Wl_Wi @ T_Wi_I_cur
             
             cur_pose_init_guess = T_Wl_L
 
@@ -572,9 +546,7 @@ class SLAMDataset(Dataset):
             self.visual_lidar_poses_direction.append(self.estimated_pose_lidar[:3, :3])
             self.visual_imu_frame.append(T_Wl_I[:3, 3])
             self.visual_imu_frame_direction.append(T_Wl_I[:3, :3])
-            # self.vidual_gtposes.append(poses_gt)
-            # visual_poses_np = np.concatenate(self.vidual_poses, axis=0)
-            # visual_gtposes_np = np.concatenate(self.vidual_gtposes, axis=0)
+
             
             
             plot = '2d'
@@ -675,12 +647,16 @@ class SLAMDataset(Dataset):
 
             # deskewing (motion undistortion) for source point cloud
             if self.config.deskew and not self.lose_track:
-                self.cur_source_points = deskewing(self.cur_source_points, cur_source_ts, 
-                                                   torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype)) # T_last<-cur
-                
-                # # IMU-- 3 deskewing
-                # self.cur_source_points = deskewing_IMU(self.cur_source_points, cur_source_ts, 
+                # self.cur_source_points = deskewing(self.cur_source_points, cur_source_ts, 
                 #                                    torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype)) # T_last<-cur
+                
+                
+                # IMU-- 3 deskewing
+                T_Wi_Iimu_deskewing = pgm.imu_prediction_poses_curinterval
+                # assert T_Wi_I_cur == T_Wi_Iimu_deskewing[-1]
+                T_Llast_Limu_deskewing = torch.tensor(self.T_L_I, dtype=torch.float32) @ torch.tensor(np.linalg.inv(T_Wi_I_last), dtype=torch.float32) @ T_Wi_Iimu_deskewing @ torch.tensor(self.T_I_L, dtype=torch.float32)
+                self.cur_source_points = deskewing_IMU(self.cur_source_points, cur_source_ts, self.ts_raw_imu_curinterval[1:], T_Llast_Limu_deskewing, self.ts_pc[frame_id-1],self.ts_pc[frame_id],
+                                                   torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype)) # T_last<-cur
             # print("# Source point for registeration : ", cur_source_torch.shape[0])
     
         T4 = get_time()

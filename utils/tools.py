@@ -30,6 +30,8 @@ from matplotlib.cm import viridis
 # 'plasma', 'inferno', 'magma', Pastel1', 'Pastel2', 'Paired', 'Accent', 'Dark2',  'Set1', 'Set2', 'Set3', 'tab10', 'tab20', 'tab20b', 'tab20c'
                   
 from utils.config import Config
+from pytorch3d.transforms import matrix_to_quaternion, quaternion_to_matrix
+
 
 
 # setup this run
@@ -555,9 +557,9 @@ def deskewing(points: torch.tensor, ts: torch.tensor, pose: torch.tensor, ts_mid
 
     ts -= ts_mid_pose
 
-    # print(ts)
+    print(ts)
 
-    rotmat_slerp = roma.rotmat_slerp(torch.eye(3).to(points), pose[:3,:3].to(points), ts)
+    rotmat_slerp = roma.rotmat_slerp(torch.eye(3).to(points), pose[:3,:3].to(points), ts) # .to(points) = to(device of points)
 
     tran_lerp = ts[:, None] * pose[:3, 3].to(points) 
 
@@ -566,8 +568,79 @@ def deskewing(points: torch.tensor, ts: torch.tensor, pose: torch.tensor, ts_mid
 
     return points_deskewd
 
-def deskewing_IMU(points: torch.tensor, ts: torch.tensor, pose: torch.tensor, ts_mid_pose = 0.5):
+def find_closest_indices(ts, sorted_ts):
+    # Find indices in sorted_ts that are closest to each timestamp in ts
+    indices = torch.searchsorted(sorted_ts, ts)
+    # assert torch.all((indices - 1 >= 0) & (indices <= len(sorted_ts) - 1))
+    before_indices = torch.clamp(indices - 1, 0, len(sorted_ts) - 1)
+    after_indices = torch.clamp(indices, 0, len(sorted_ts) - 1)
+    # Ensure we do not exceed the range of sorted_ts
+    before_indices = torch.where(before_indices > after_indices, after_indices, before_indices)
+    return before_indices, after_indices
+
+def interpolate_poses(before_indices, after_indices, sorted_ts, sorted_poses, ts, points):
+    # Initialize the container for deskewed points
+    points_deskewed = points.clone()
+
+    # Loop over all unique pairs of indices, directly derived from before and after indices
+    for i in range(len(sorted_ts) - 1):  # Assuming sorted_ts is always valid for i and i+1
+        mask = (before_indices == i) & (after_indices == i+1)
+        if torch.any(mask):
+            points_subset = points[mask]
+            ts_subset = ts[mask]
+
+            ts_before = sorted_ts[i]
+            ts_after = sorted_ts[i+1]
+
+            t = (ts_subset - ts_before) / (ts_after - ts_before)
+
+            rot_before = sorted_poses[i, :3, :3]
+            rot_after = sorted_poses[i+1, :3, :3]
+            trans_before = sorted_poses[i, :3, 3]
+            trans_after = sorted_poses[i+1, :3, 3]
+
+            rotmat_slerp = roma.rotmat_slerp(rot_before, rot_after, t[:, None]).squeeze(1) # [n,1,3,3]
+            tran_lerp = (1 - t[:, None]) * trans_before + t[:, None] * trans_after # [n,3]
+
+            points_deskewed[mask, :3] = (rotmat_slerp @ points_subset[:, :3].unsqueeze(-1)).squeeze(-1) + tran_lerp
+
+    return points_deskewed
+
+def deskewing_IMU(points: torch.tensor, ts: torch.tensor, ts_raw_imu_curinterval, T_Llast_Limu_deskewing: torch.tensor, ts_lidar_start, ts_lidar_end, relative_lidar_pose: torch.tensor):
+    assert len(ts_raw_imu_curinterval)==len(T_Llast_Limu_deskewing)
+
+    # --Convert datetime to timestamps in seconds
+    imu_timestamps = [ts_imu.timestamp() for ts_imu in ts_raw_imu_curinterval]
+    start_timestamp = ts_lidar_start.timestamp()
+
+    ts_interval = imu_timestamps[-1] - start_timestamp
+    test = ts_lidar_end.timestamp() - start_timestamp
+    # ts_mid_pose = ts_lidar_start + 1/2*(ts_interval)
+    
+    # -- sort imu and lidar ts/poses
+    # Combine IMU and LiDAR data
+    combined_data = list(zip(imu_timestamps, T_Llast_Limu_deskewing)) + [(start_timestamp, torch.eye(4))]
+    # Sort combined data by timestamps
+    combined_data.sort(key=lambda x: x[0])
+    # Unpack the sorted pairs into separate lists (if needed)
+    sorted_timestamps, sorted_poses = zip(*combined_data)
+    sorted_timestamps = torch.tensor(sorted_timestamps, dtype=torch.float64).to(ts.device)
+    sorted_timestamps -= start_timestamp
+    sorted_poses_tensor = torch.stack(sorted_poses).to(ts.device)
+
+    # --ts of points
     ts = ts.squeeze(-1)
+
+    min_ts = torch.min(ts)
+    max_ts = torch.max(ts)
+    ts_scaled = (ts - min_ts) / (max_ts - min_ts) * ts_interval
+
+    # ts_scaled += start_timestamp # to large
+
+    before_indices, after_indices = find_closest_indices(ts_scaled, sorted_timestamps)
+    points_deskewed = interpolate_poses(before_indices, after_indices, sorted_timestamps, sorted_poses_tensor, ts_scaled, points)
+
+    return points_deskewed
     
 
 

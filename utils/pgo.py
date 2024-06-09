@@ -10,6 +10,7 @@ from rich import print
 import datetime as dt
 import os
 from scipy.spatial.transform import Rotation as R
+import torch
 
 from utils.config import Config
 from dataset.slam_dataset import SLAMDataset
@@ -87,14 +88,7 @@ class PoseGraphManager:
 
     # --- IMU
     def preintegration(self, acc, gyro, dts, last_pose, cur_id: int):
-        #
-        for i,dt in enumerate(dts):
-            # self.pim.integrate() # https://github.com/borglab/gtsam/blob/0fee5cb76e7a04b590ff0dc1051950da5b265340/python/gtsam/examples/PreintegrationExample.py#L159C16-L159C70 
-            self.pim.integrateMeasurement(acc[i], gyro[i], dt) # https://github.com/borglab/gtsam/blob/4abef9248edc4c49943d8fd8a84c028deb486f4c/python/gtsam/examples/CombinedImuFactorExample.py#L175C12-L177C74 
         # preintegration
-        # initial_rotation = gtsam.Rot3(last_pose[:3, :3])
-        # initial_translation = gtsam.Point3(last_pose[0, 3],last_pose[1, 3],last_pose[2, 3])
-        
         if cur_id == 1:
             initial_pose = gtsam.Pose3(self.T_Wi_I0) #self.imu_calib_initial_pose  # last_pose @ self.imu_calib_initial_pose  
         else:
@@ -104,6 +98,19 @@ class PoseGraphManager:
             self.velocity) # https://github.com/borglab/gtsam/blob/4abef9248edc4c49943d8fd8a84c028deb486f4c/python/gtsam/examples/CombinedImuFactorExample.py#L164C9-L168C46 
         
         self.imu_v_initial.append(self.velocity) # testing
+
+        #
+        self.imu_prediction_poses_curinterval = torch.empty(len(dts), 4, 4) # the prediction of imu pose wrt Wi between 2 lidar frames
+        for i,dt in enumerate(dts):
+            # self.pim.integrate() # https://github.com/borglab/gtsam/blob/0fee5cb76e7a04b590ff0dc1051950da5b265340/python/gtsam/examples/PreintegrationExample.py#L159C16-L159C70 
+            self.pim.integrateMeasurement(acc[i], gyro[i], dt) # https://github.com/borglab/gtsam/blob/4abef9248edc4c49943d8fd8a84c028deb486f4c/python/gtsam/examples/CombinedImuFactorExample.py#L175C12-L177C74 
+            
+            pose_each_frame_homo = np.eye(4)
+            pose_each_frame = self.pim.predict(initial_state, self.imu_bias).pose()
+            pose_each_frame_homo[:3,:3] = pose_each_frame.rotation().matrix()
+            pose_each_frame_homo[:3,3] = pose_each_frame.translation()
+            self.imu_prediction_poses_curinterval[i] = torch.tensor(pose_each_frame_homo)
+        # TODO: return pose for each imu frame,ts
 
         imu_prediction = self.pim.predict(initial_state, self.imu_bias)
         predicted_pose = imu_prediction.pose() # w2imu
