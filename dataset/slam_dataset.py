@@ -655,7 +655,7 @@ class SLAMDataset(Dataset):
                 # IMU-- 3 deskewing
                 T_Wi_Iimu_deskewing = pgm.imu_prediction_poses_curinterval
                 # assert T_Wi_Icur == T_Wi_Iimu_deskewing[-1]
-                T_Llast_Limu_deskewing = torch.tensor(self.T_L_I, dtype=torch.float32) @ torch.tensor(np.linalg.inv(T_Wi_Ilast), dtype=torch.float32) @ T_Wi_Iimu_deskewing @ torch.tensor(self.T_I_L, dtype=torch.float32)
+                # T_Llast_Limu_deskewing = torch.tensor(self.T_L_I, dtype=torch.float32) @ torch.tensor(np.linalg.inv(T_Wi_Ilast), dtype=torch.float32) @ T_Wi_Iimu_deskewing @ torch.tensor(self.T_I_L, dtype=torch.float32)
                 T_Lcur_Limu_deskewing = torch.tensor(np.linalg.inv(T_Wl_Lcur), dtype=torch.float32) @ torch.tensor(self.T_Wl_Wi, dtype=torch.float32) @ T_Wi_Iimu_deskewing @ torch.tensor(self.T_I_L, dtype=torch.float32)
                 # assert np.allclose(T_Lcur_Limu_deskewing[-1].numpy(), np.eye(4))  # the transformed poses of last imu prediction should be equals to Identity
 
