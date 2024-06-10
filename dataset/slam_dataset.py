@@ -519,27 +519,28 @@ class SLAMDataset(Dataset):
             # # last_pose_w2imu = self.imu_preinte_continuous_test
             # last_pose_w2imu = np.linalg.inv(self.T_Wl_Wi) @ self.imu_preinte_continuous_test @ self.T_L_I 
             # T_Wi_I = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=last_pose_w2imu, cur_id=self.processed_frame)
-            # T_Wl_L = self.T_Wl_Wi @ T_Wi_I @ self.T_I_L
-            # # T_Wl_L = T_Wi_I
-            # self.imu_preinte_continuous_test = T_Wl_L
+            # T_Wl_Lcur = self.T_Wl_Wi @ T_Wi_I @ self.T_I_L
+            # # T_Wl_Lcur = T_Wi_I
+            # self.imu_preinte_continuous_test = T_Wl_Lcur
             # T_Wl_I = self.T_Wl_Wi @ T_Wi_I
 
 
             # # IMU--2 pose initial guess
             # # transform to imu frame
-            T_Wi_I_last = np.linalg.inv(self.T_Wl_Wi) @ self.T_Wl_Llast @ self.T_L_I 
+            T_Wi_Ilast = np.linalg.inv(self.T_Wl_Wi) @ self.T_Wl_Llast @ self.T_L_I 
             if frame_id==1: 
-                assert np.allclose(T_Wi_I_last, pgm.T_Wi_I0)
+                assert np.allclose(T_Wi_Ilast, pgm.T_Wi_I0)
             # last_pose_w2imu = self.imu_preinte_continuous_test @ self.T_pose_to_velo
-            T_Wi_I_cur = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=T_Wi_I_last, cur_id=self.processed_frame)
-            T_Wl_L = self.T_Wl_Wi @ T_Wi_I_cur @ self.T_I_L
-            T_Wl_I = self.T_Wl_Wi @ T_Wi_I_cur
+            T_Wi_Icur = pgm.preintegration(acc=self.imu_curinter['acc'],gyro=self.imu_curinter['gyro'],dts=self.imu_curinter['dt'],last_pose=T_Wi_Ilast, cur_id=self.processed_frame)
+            T_Wl_Lcur = self.T_Wl_Wi @ T_Wi_Icur @ self.T_I_L
+            T_Wl_I = self.T_Wl_Wi @ T_Wi_Icur
+            T_Llast_Lcur =  np.linalg.inv(self.T_Wl_Llast) @ T_Wl_Lcur
             
-            cur_pose_init_guess = T_Wl_L
+            cur_pose_init_guess = T_Wl_Lcur
 
 
             # --- testing: IMU preinte vidual
-            poses = T_Wl_L  #initial_guess_w2imu # initial_guess_w2lidar # output, wrt. initial imu frame
+            poses = T_Wl_Lcur  #initial_guess_w2imu # initial_guess_w2lidar # output, wrt. initial imu frame
             self.vidual_poses.append(poses[:3, 3])
             self.visual_poses_direction.append(poses[:3, :3])
             self.visual_lidar_poses.append(self.estimated_pose_lidar[:3, 3])
@@ -653,10 +654,12 @@ class SLAMDataset(Dataset):
                 
                 # IMU-- 3 deskewing
                 T_Wi_Iimu_deskewing = pgm.imu_prediction_poses_curinterval
-                # assert T_Wi_I_cur == T_Wi_Iimu_deskewing[-1]
-                T_Llast_Limu_deskewing = torch.tensor(self.T_L_I, dtype=torch.float32) @ torch.tensor(np.linalg.inv(T_Wi_I_last), dtype=torch.float32) @ T_Wi_Iimu_deskewing @ torch.tensor(self.T_I_L, dtype=torch.float32)
-                self.cur_source_points = deskewing_IMU(self.cur_source_points, cur_source_ts, self.ts_raw_imu_curinterval[1:], T_Llast_Limu_deskewing, self.ts_pc[frame_id-1],self.ts_pc[frame_id],
-                                                   torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype)) # T_last<-cur
+                # assert T_Wi_Icur == T_Wi_Iimu_deskewing[-1]
+                T_Llast_Limu_deskewing = torch.tensor(self.T_L_I, dtype=torch.float32) @ torch.tensor(np.linalg.inv(T_Wi_Ilast), dtype=torch.float32) @ T_Wi_Iimu_deskewing @ torch.tensor(self.T_I_L, dtype=torch.float32)
+                T_Lcur_Limu_deskewing = torch.tensor(np.linalg.inv(T_Wl_Lcur), dtype=torch.float32) @ torch.tensor(self.T_Wl_Wi, dtype=torch.float32) @ T_Wi_Iimu_deskewing @ torch.tensor(self.T_I_L, dtype=torch.float32)
+                # assert np.allclose(T_Lcur_Limu_deskewing[-1].numpy(), np.eye(4))  # the transformed poses of last imu prediction should be equals to Identity
+
+                self.cur_source_points = deskewing_IMU(self.cur_source_points, cur_source_ts, self.ts_raw_imu_curinterval[1:], T_Lcur_Limu_deskewing, np.linalg.inv(T_Llast_Lcur), self.ts_pc[frame_id-1],self.ts_pc[frame_id])
             # print("# Source point for registeration : ", cur_source_torch.shape[0])
     
         T4 = get_time()

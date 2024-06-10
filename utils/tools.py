@@ -606,8 +606,8 @@ def interpolate_poses(before_indices, after_indices, sorted_ts, sorted_poses, ts
 
     return points_deskewed
 
-def deskewing_IMU(points: torch.tensor, ts: torch.tensor, ts_raw_imu_curinterval, T_Llast_Limu_deskewing: torch.tensor, ts_lidar_start, ts_lidar_end, relative_lidar_pose: torch.tensor):
-    assert len(ts_raw_imu_curinterval)==len(T_Llast_Limu_deskewing)
+def deskewing_IMU(points: torch.tensor, ts: torch.tensor, ts_raw_imu_curinterval, T_Lcur_Limu_deskewing: torch.tensor, T_Lcur_Llast, ts_lidar_start, ts_lidar_end):
+    assert len(ts_raw_imu_curinterval)==len(T_Lcur_Limu_deskewing)
 
     # --Convert datetime to timestamps in seconds
     imu_timestamps = [ts_imu.timestamp() for ts_imu in ts_raw_imu_curinterval]
@@ -619,7 +619,7 @@ def deskewing_IMU(points: torch.tensor, ts: torch.tensor, ts_raw_imu_curinterval
     
     # -- sort imu and lidar ts/poses
     # Combine IMU and LiDAR data
-    combined_data = list(zip(imu_timestamps, T_Llast_Limu_deskewing)) + [(start_timestamp, torch.eye(4))]
+    combined_data = list(zip(imu_timestamps, T_Lcur_Limu_deskewing)) + [(start_timestamp, torch.tensor(T_Lcur_Llast, dtype=torch.float32))]
     # Sort combined data by timestamps
     combined_data.sort(key=lambda x: x[0])
     # Unpack the sorted pairs into separate lists (if needed)
