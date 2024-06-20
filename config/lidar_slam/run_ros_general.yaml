@@ -2,6 +2,10 @@ setting:
   name: "test_ros"
   output_root: "./experiments"
   deskew: True
+  source_from_ros: True
+
+  # end_frame: 1e9 # 600
+  gpu_id: "1"
 process:
   min_range_m: 2.5
   max_range_m: 80.0 # maximum distance filter for each frame
@@ -30,10 +34,11 @@ continual:
 tracker:
   source_vox_down_m: 0.8
   iter_n: 50
-pgo:
-  map_context: True
-  pgo_freq_frame: 30
-  virtual_side_count: 6
+imu_pgo: True
+# pgo:
+#   map_context: True
+#   pgo_freq_frame: 30
+#   virtual_side_count: 6
 optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 10000
@@ -41,3 +46,4 @@ eval:
   wandb_vis_on: False # log to wandb or not
   silence_log: False
   save_map: True
+  save_mesh: True

@@ -21,6 +21,8 @@ import matplotlib.cm as cm
 import wandb
 import pypose as pp
 from kitti360scripts.devkits.commons import loadCalibration
+import yaml
+
 
 from utils.config import Config
 from utils.tools import get_time, voxel_down_sample_torch, deskewing,deskewing_IMU, transform_torch, plot_timing_detail, tranmat_close_to_identity
@@ -33,6 +35,11 @@ import datetime as dt
 from scipy.spatial.transform import Rotation as R
 # TODO: write a new dataloader for RGB-D inputs, not always firstly converting them to KITTI Lidar format
 
+# ros related
+import rospy
+from sensor_msgs.msg import PointCloud2
+from sensor_msgs import point_cloud2
+
 class SLAMDataset(Dataset):
     def __init__(self, config: Config) -> None:
 
@@ -44,7 +51,7 @@ class SLAMDataset(Dataset):
         self.device = config.device
 
         # point cloud files
-        if config.pc_path != "":
+        if config.pc_path != "": # default empty in ros
             from natsort import natsorted 
             # self.pc_filenames = natsorted(os.listdir(config.pc_path)) # sort files as 1, 2,… 9, 10 not 1, 10, 100 with natsort
             self.pc_filenames = natsorted(os.listdir(os.path.join(config.pc_path,'data')))
@@ -80,38 +87,47 @@ class SLAMDataset(Dataset):
 
         self.poses_ref = [np.eye(4)] # only used when gt_pose_provided
 
-        # calibration kitti 360
-        self.calib360 = {}
-        fileCameraToPose = os.path.join(config.calib360_path, 'calib_cam_to_pose.txt')
-        T_cam_to_pose = loadCalibration.loadCalibrationCameraToPose(fileCameraToPose) # cam to imu
-        # print('Loaded %s' % fileCameraToPose)
-        # print('----------cam to Pose--------',T_cam_to_pose)
+        # TODO: config-calibration from kitti
+        calibration_kitti360 = False
+        if calibration_kitti360:
+            # calibration kitti 360
+            self.calib360 = {}
+            fileCameraToPose = os.path.join(config.calib360_path, 'calib_cam_to_pose.txt')
+            T_cam_to_pose = loadCalibration.loadCalibrationCameraToPose(fileCameraToPose) # cam to imu
+            # print('Loaded %s' % fileCameraToPose)
+            # print('----------cam to Pose--------',T_cam_to_pose)
 
-        fileCameraToVelo = os.path.join(config.calib360_path, 'calib_cam_to_velo.txt')
-        T_cam_to_velo = loadCalibration.loadCalibrationRigid(fileCameraToVelo)
-        # print('----------cam to Lidar--------',T_cam_to_velo)
+            fileCameraToVelo = os.path.join(config.calib360_path, 'calib_cam_to_velo.txt')
+            T_cam_to_velo = loadCalibration.loadCalibrationRigid(fileCameraToVelo)
+            # print('----------cam to Lidar--------',T_cam_to_velo)
 
-        # self.T_pose_to_velo = T_cam_to_pose['image_00'] @ np.linalg.inv(T_cam_to_velo) #from imu to cam @ from cam to lidar
-        self.T_L_I = T_cam_to_velo @ np.linalg.inv(T_cam_to_pose['image_00']) 
+            # self.T_pose_to_velo = T_cam_to_pose['image_00'] @ np.linalg.inv(T_cam_to_velo) #from imu to cam @ from cam to lidar
+            self.T_L_I = T_cam_to_velo @ np.linalg.inv(T_cam_to_pose['image_00']) 
 
-        # translation= np.array([[0.81,-0.32,0.8]])
-        # homo = np.eye(4)
-        # homo[:3,3]=translation
-        self.T_L_I[:3,:3] = np.eye(3)
-        self.T_I_L = np.linalg.inv(self.T_L_I)
+            self.T_L_I[:3,:3] = np.eye(3)
+            self.T_I_L = np.linalg.inv(self.T_L_I)
         
-        # print('-------transforamtion from reference -------',self.T_pose_to_velo) # checked: correct
-        # fake correct
-        # self.T_pose_to_velo = np.linalg.inv(T_cam_to_velo) @ T_cam_to_pose['image_00'] 
-        # self.T_pose_to_velo = np.linalg.inv(T_cam_to_pose['image_00']) @ T_cam_to_velo # wrong, should inv
-        # print('-------transforamtion I feel like-------',self.T_pose_to_velo) # wrong!
+        # TODO config
+        calibration_newer_college = True
+        calib_file_path = 'data/Newer_College_Dataset/os_imu_lidar_transforms.yaml'
+        if calibration_newer_college:
+            with open(calib_file_path, 'r') as file:
+                calibration_data = yaml.safe_load(file)
+            
+            # Extract translation and rotation for os_sensor_to_os_imu
+            os_sensor_to_os_imu_data = calibration_data['os_sensor_to_os_imu']
+            translation_imu = np.array(os_sensor_to_os_imu_data['translation'])
+            rotation_imu = np.array(os_sensor_to_os_imu_data['rotation'])
+            
+            self.T_I_L = create_homogeneous_transform(translation_imu, rotation_imu)
+            self.T_L_I = np.linalg.inv(self.T_I_L)
+            # -- test: Extract translation and rotation for os_imu_to_os_sensor
+            os_imu_to_os_sensor_data = calibration_data['os_imu_to_os_sensor']
+            translation_sensor = np.array(os_imu_to_os_sensor_data['translation'])
+            rotation_sensor = np.array(os_imu_to_os_sensor_data['rotation'])
 
-        # '''source 'kitti360Viewer3DRaw.py'
-        #  TrVeloToPose = TrCamToPose['image_00'] @ np.linalg.inv(TrCam0ToVelo)
-        # Tr_delta = np.linalg.inv(self.TrVeloToPose) @ Tr_pose_pose @ self.TrVeloToPose
-        # r = Rodrigues(Tr_delta[0:3,0:3])
-        # t = Tr_delta[0:3,3]
-        # TODO: unwrap points to compensate for ego motion???
+            os_imu_to_os_sensor_matrix = create_homogeneous_transform(translation_sensor, rotation_sensor)
+            assert np.allclose(np.linalg.inv(self.T_I_L), os_imu_to_os_sensor_matrix)
 
         self.calib = {}
         self.calib['Tr'] = np.eye(4) # as default if calib file is not provided # as T_lidar<-camera
@@ -198,10 +214,13 @@ class SLAMDataset(Dataset):
         self.cur_source_normals = None
         self.cur_source_colors = None
 
-        # ts
-        self.ts_pc = loadTimestamps(self.config.pc_path)
-        self.ts_syncimu = loadTimestamps(self.config.sync_imu_path)
-        self.ts_rawimu = loadTimestamps(self.config.raw_imu_path)
+        if not self.config.source_from_ros: # kitti360
+            # ts # default empty in ros
+            self.ts_pc = loadTimestamps(self.config.pc_path)
+            self.ts_syncimu = loadTimestamps(self.config.sync_imu_path)
+            self.ts_rawimu = loadTimestamps(self.config.raw_imu_path)
+        else:
+            self.lidar_frame_ts = {}
 
         # testing IMU
         self.vidual_poses = []
@@ -217,19 +236,13 @@ class SLAMDataset(Dataset):
         # velocity: imu preintegration input(last frame = optimized last frame)/output; optimized
         
 
-    def read_frame_ros(self, msg, ts_field_name = "time", ts_col=3):
-
-        # ros related
-        import rospy
-        from sensor_msgs.msg import PointCloud2
-        from sensor_msgs import point_cloud2
-
+    def read_frame_ros(self, lidar_msg, ts_field_name = "time", ts_col=3):
         # ts_col represents the column id for timestamp
         self.T_Wl_Lcur = np.eye(4)
         self.cur_pose_torch = torch.tensor(self.T_Wl_Lcur, device=self.device, dtype=self.dtype)
 
-        pc_data = point_cloud2.read_points(msg, field_names=("x", "y", "z", ts_field_name), skip_nans=True)
-
+        # pc_data = point_cloud2.read_points(lidar_msg, field_names=("x", "y", "z", ts_field_name), skip_nans=True)
+        pc_data = point_cloud2.read_points(lidar_msg, field_names=("x", "y", "z"), skip_nans=True)
         # convert the point cloud data to a numpy array
         data = np.array(list(pc_data))
 
@@ -255,6 +268,14 @@ class SLAMDataset(Dataset):
 
         self.cur_point_cloud_torch = torch.tensor(point_cloud, device=self.device, dtype=self.dtype)
 
+
+        # if self.processed_frame > 0:
+        #     # IMU--1 load IMU
+        #     self.imu_curinter = {}
+        #     self.imu_curinter['dt'] = imu_curinterval['dt']
+        #     self.imu_curinter['acc'] = imu_curinterval['acc']
+        #     self.imu_curinter['gyro'] = imu_curinterval['gyro']
+        
         if self.config.deskew:
             self.get_point_ts(point_ts)
 
@@ -479,9 +500,6 @@ class SLAMDataset(Dataset):
         init_imu_integrator = {}
         # prepare for the registration
         if self.processed_frame == 0: # initialize the first frame, no tracking yet
-            #
-            # self.T_Wl_Lcur = pgm.imu_calib_initial_pose @ np.linalg.inv(self.T_pose_to_velo)
-            # self.T_Wl_Lcur = np.linalg.inv(self.T_pose_to_velo)
             # self.T_Wl_Wi=  np.linalg.inv( pgm.T_Wi_I0 @ self.T_I_L) # wi to wl
             self.T_Wl_Wi= self.T_L_I @ np.linalg.inv( pgm.T_Wi_I0 ) # wi to wl
             
@@ -551,7 +569,7 @@ class SLAMDataset(Dataset):
             
             
             plot = '2d'
-            if frame_id % 40==0:
+            if frame_id % 400==0:
                 visual_poses_np = np.array(self.vidual_poses)
                 visual_poses_direction_np = np.array(self.visual_poses_direction)
                 visual_poses_lidar_np = np.array(self.visual_lidar_poses)
@@ -659,7 +677,13 @@ class SLAMDataset(Dataset):
                 T_Lcur_Limu_deskewing = torch.tensor(np.linalg.inv(T_Wl_Lcur), dtype=torch.float32) @ torch.tensor(self.T_Wl_Wi, dtype=torch.float32) @ T_Wi_Iimu_deskewing @ torch.tensor(self.T_I_L, dtype=torch.float32)
                 # assert np.allclose(T_Lcur_Limu_deskewing[-1].numpy(), np.eye(4))  # the transformed poses of last imu prediction should be equals to Identity
 
-                self.cur_source_points = deskewing_IMU(self.cur_source_points, cur_source_ts, self.ts_raw_imu_curinterval[1:], T_Lcur_Limu_deskewing, np.linalg.inv(T_Llast_Lcur), self.ts_pc[frame_id-1],self.ts_pc[frame_id])
+                if self.config.source_from_ros:
+                    lidar_last_ts = self.lidar_frame_ts['last_ts']
+                    lidar_cur_ts = self.lidar_frame_ts['cur_ts']
+                else:
+                    lidar_last_ts = self.ts_pc[frame_id-1]
+                    lidar_cur_ts = self.ts_pc[frame_id]
+                self.cur_source_points = deskewing_IMU(self.cur_source_points, cur_source_ts, self.ts_raw_imu_curinterval[1:], T_Lcur_Limu_deskewing, np.linalg.inv(T_Llast_Lcur), lidar_last_ts, lidar_cur_ts)
             # print("# Source point for registeration : ", cur_source_torch.shape[0])
     
         T4 = get_time()
@@ -1251,3 +1275,19 @@ def plot_frame(ax, R, t, frame_label, origin_color, colors, length=0.01):
     ax.text(t[0] + R[0, 0] * length, t[1] + R[1, 0] * length, t[2] + R[2, 0] * length, 'X', color=colors[0])
     ax.text(t[0] + R[0, 1] * length, t[1] + R[1, 1] * length, t[2] + R[2, 1] * length, 'Y', color=colors[1])
     ax.text(t[0] + R[0, 2] * length, t[1] + R[1, 2] * length, t[2] + R[2, 2] * length, 'Z', color=colors[2])
+
+def quaternion_to_rotation_matrix(quaternion):
+    x, y, z, w = quaternion
+    R = np.array([
+        [1 - 2 * (y**2 + z**2), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+        [2 * (x * y + z * w), 1 - 2 * (x**2 + z**2), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x**2 + y**2)]
+    ])
+    return R
+
+def create_homogeneous_transform(translation, rotation):
+    R = quaternion_to_rotation_matrix(rotation)
+    T = np.eye(4)
+    T[:3, :3] = R
+    T[:3, 3] = translation
+    return T

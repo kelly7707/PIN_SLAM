@@ -5,7 +5,8 @@
 
 import os
 import rospy
-from sensor_msgs.msg import PointCloud2, PointField
+import rosbag
+from sensor_msgs.msg import PointCloud2, PointField, Imu
 import sensor_msgs.point_cloud2 as pc2
 from geometry_msgs.msg import PoseStamped, TransformStamped
 import nav_msgs.msg
@@ -19,6 +20,8 @@ import numpy as np
 import wandb
 import torch
 from rich import print
+import datetime as dt
+import signal
 
 from utils.config import Config
 from utils.tools import *
@@ -30,7 +33,7 @@ from utils.tracker import Tracker
 from utils.mapper import Mapper
 from model.neural_points import NeuralPoints
 from model.decoder import Decoder
-from dataset.slam_dataset import SLAMDataset
+from dataset.slam_dataset import SLAMDataset, find_closest_timestamp_index
 
 # TODO:
 # add ros service to save the map without stop the slam process
@@ -42,7 +45,7 @@ from dataset.slam_dataset import SLAMDataset
 '''
 
 class PINSLAMer:
-    def __init__(self, config_path, point_cloud_topic, ts_field_name):
+    def __init__(self, config_path, bag_path, point_cloud_topic, imu_topic, ts_field_name):
 
         rospy.init_node("pin_slam")
         print("[bold green]PIN-SLAM starts[/bold green]","📍" )
@@ -119,8 +122,99 @@ class PINSLAMer:
         rospy.Service('~save_results', Empty, self.save_slam_result_service_callback)
         rospy.Service('~save_mesh', Empty, self.save_mesh_service_callback)
 
-        # for each frame
-        rospy.Subscriber(point_cloud_topic, PointCloud2, self.frame_callback)
+        # TODO # Setup signal handler for manual termination
+        # signal.signal(signal.SIGINT, self.signal_handler)
+        # signal.signal(signal.SIGTERM, self.signal_handler)
+
+
+        # TODO: config - the reading of rosbag
+        rosbag_offline = True
+        if rosbag_offline:
+            # Open the rosbag and read messages 
+            imu_buffer = []
+            self.lidar_curframe = {}
+            last_lidar_timestamp = None
+            lidar_frame_count = 0
+            calibration_frame_count = 3  # Number of LiDAR frames to use for IMU calibration
+
+            with rosbag.Bag(bag_path, 'r') as bag:
+                for topic, msg, t in bag.read_messages(topics=[point_cloud_topic, imu_topic]):
+                    if topic == imu_topic:
+                        # Append IMU data to the buffer
+                        imu_buffer.append(msg)
+                    elif topic == point_cloud_topic:
+                        lidar_frame_count += 1
+                        lidar_timestamp = dt.datetime.fromtimestamp(msg.header.stamp.secs)
+                        lidar_timestamp += dt.timedelta(microseconds=msg.header.stamp.nsecs / 1000) 
+                        self.dataset.lidar_frame_ts['last_ts'] = last_lidar_timestamp
+                        self.dataset.lidar_frame_ts['cur_ts'] = lidar_timestamp
+
+                        # if lidar_frame_count > self.config.end_frame:
+                        #     break
+
+                        if lidar_frame_count <= calibration_frame_count:
+                            # Collect IMU data for calibration
+                            continue  # Skip further processing for initial calibration frames
+
+
+                        imu_timestamps = [dt.datetime.fromtimestamp(imu_msg.header.stamp.secs) + dt.timedelta(microseconds=imu_msg.header.stamp.nsecs / 1000) for imu_msg in imu_buffer]
+                        relevant_imu_indices = []
+                        
+                        if last_lidar_timestamp is None:
+                            last_index = 0
+                        else:
+                            # Find the closest IMU timestamps for both the last and current LiDAR frames
+                            last_index = find_closest_timestamp_index(last_lidar_timestamp, imu_timestamps)
+                        
+                        current_index = find_closest_timestamp_index(lidar_timestamp, imu_timestamps)
+
+                        assert last_index < current_index
+                        relevant_imu_indices = range(last_index, current_index) # + 1
+                        # else:
+                        #     relevant_imu_indices = [last_index, current_index]
+                      
+
+                        # Extract data from relevant IMU messages
+                        linear_accelerations = []
+                        angular_velocities = []
+                        imu_dt = []
+                        for idx in relevant_imu_indices:
+                            imu_msg = imu_buffer[idx]
+                            linear_accelerations.append([imu_msg.linear_acceleration.x,
+                                                        imu_msg.linear_acceleration.y,
+                                                        imu_msg.linear_acceleration.z])
+                            angular_velocities.append([imu_msg.angular_velocity.x,
+                                                    imu_msg.angular_velocity.y,
+                                                    imu_msg.angular_velocity.z])
+                            imu_dt.append(dt.datetime.timestamp(imu_timestamps[idx+1]) - dt.datetime.timestamp(imu_timestamps[idx]))
+
+                        assert len(linear_accelerations) == len(angular_velocities) == len(imu_dt)
+                        self.dataset.ts_raw_imu_curinterval = imu_timestamps[last_index:current_index+1]
+                        self.dataset.imu_curinter = {
+                            'dt': np.array(imu_dt),
+                            'acc': np.array(linear_accelerations),
+                            'gyro': np.array(angular_velocities)
+                        }
+
+                        # Remove used IMU messages from the buffer
+                        imu_buffer = [imu_msg for i, imu_msg in enumerate(imu_buffer) if i >= current_index]
+                        
+                        # -- lidar
+                        # point_cloud_messages.append(msg)
+                        last_lidar_timestamp = lidar_timestamp
+
+                        # -- 
+                        self.frame_callback(msg)
+
+        else:        
+            rospy.Subscriber(imu_topic, Imu, self.imu_callback, queue_size=100)
+            # for each frame -- run the rosbag in terminal
+            rospy.Subscriber(point_cloud_topic, PointCloud2, self.frame_callback)
+
+            # # Set up the subscriber with functools.partial to pass additional arguments
+            # #rospy.Subscriber(point_cloud_topic, PointCloud2, partial(self.frame_callback, a=1, b=2, c=3))
+
+
 
     def save_slam_result_service_callback(self, request):
         # Do something when the service is called
@@ -148,14 +242,27 @@ class PINSLAMer:
         return EmptyResponse()
 
 
-    def frame_callback(self, msg):
+    def imu_callback(self, imu_msg):
+        rospy.loginfo("IMU message received")
+        self.imu_buffer.append(imu_msg)
+
+
+    def frame_callback(self, lidar_msg):
         
         # I. Load data and preprocessing
         T0 = get_time()
-        self.dataset.read_frame_ros(msg, ts_field_name=self.ts_field_name)
+        self.dataset.read_frame_ros(lidar_msg, ts_field_name=self.ts_field_name)
+
+        if self.dataset.processed_frame == 0:
+            self.pgm.imu_Preintegration_init(self.dataset)
+            if self.config.imu_pgo:
+                self.pgm.add_pose_prior(0, self.pgm.T_Wi_I0 , fixed=True) #pgm.imu_calib_initial_pose
+                # better removed 
+                self.pgm.add_velocity_prior(0, fixed=False) # False
+                self.pgm.add_bias_prior(0, fixed=False) # False
 
         T1 = get_time()
-        self.dataset.preprocess_frame() 
+        self.dataset.preprocess_frame(self.pgm, self.dataset.processed_frame) 
 
         T2 = get_time()
 
@@ -164,7 +271,7 @@ class PINSLAMer:
             tracking_result = self.tracker.tracking(self.dataset.cur_source_points, self.dataset.cur_pose_guess_torch, 
                                                 self.dataset.cur_source_colors, self.dataset.cur_source_normals)
             
-            cur_pose_torch, _, _, valid_flag = tracking_result
+            cur_pose_torch, cur_odom_cov, _, valid_flag = tracking_result
 
             self.dataset.lose_track = not valid_flag 
             self.mapper.lose_track = not valid_flag
@@ -177,6 +284,21 @@ class PINSLAMer:
         T3 = get_time()
 
         # III. Loop detection and pgo 
+        if self.config.imu_pgo:
+            self.pgm.add_frame_node(self.dataset.processed_frame, np.linalg.inv(self.dataset.T_Wl_Wi) @ self.dataset.pgo_poses[self.dataset.processed_frame] @ self.dataset.T_L_I) #  add new node and pose initial guess
+            self.pgm.init_poses = np.linalg.inv(self.dataset.T_Wl_Wi) @ self.dataset.pgo_poses @ self.dataset.T_L_I #  
+
+            if self.dataset.processed_frame > 0:
+                cur_edge_cov = cur_odom_cov if self.config.use_reg_cov_mat else None     
+                # --- between factor
+                imu_transform = self.dataset.T_I_L @ self.dataset.last_odom_tran @ self.dataset.T_L_I        
+                self.pgm.add_odometry_factor(self.dataset.processed_frame, self.dataset.processed_frame-1, imu_transform, cov = cur_edge_cov) # T_p<-c   # TODO: check- cur_edge_cov
+                self.pgm.estimate_drift(self.dataset.travel_dist, self.dataset.processed_frame) # estimate the current drift
+
+                self.pgm.add_combined_IMU_factor(self.dataset.processed_frame, self.dataset.processed_frame-1)
+                # --- optimization & update
+                self.pgm.optimize_pose_graph(self.dataset, self.dataset.processed_frame)
+
         if self.config.pgo_on: 
             self.loop_corrected = self.detect_correct_loop()
 
@@ -213,7 +335,7 @@ class PINSLAMer:
         T6 = get_time()
 
         # publishing
-        self.publish_msg(msg)
+        self.publish_msg(lidar_msg)
 
         T7 = get_time()
 
@@ -277,7 +399,7 @@ class PINSLAMer:
 
     def publish_msg(self, input_pc_msg):
         
-        cur_pose = self.dataset.cur_pose_ref
+        cur_pose = self.dataset.T_Wl_Lcur
         cur_q = tf.transformations.quaternion_from_matrix(cur_pose)
         cur_t = cur_pose[0:3,3]
 
@@ -465,14 +587,21 @@ class PINSLAMer:
                         self.loop_reg_failed_count += 1
 
         return False
-   
+    
+
+    # def signal_handler(self, signum, frame):
+    #     self.call_services_and_terminate()
                     
+
 if __name__ == "__main__":
 
     config_path = rospy.get_param('~config_path', "./config/lidar_slam/run_ncd_128.yaml")
     point_cloud_topic = rospy.get_param('~point_cloud_topic', "/os_cloud_node/points")
+    imu_topic = rospy.get_param('~imu_topic', "/os_cloud_node/imu")
     ts_field_name = rospy.get_param('~point_timestamp_field_name', "time")
 
+    bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
+    
     # If you would like to directly run the python script without including it in a ROS package
     # python pin_slam_ros_node.py [path_to_your_config_file] [point_cloud_topic]
     print("If you would like to directly run the python script without including it in a ROS package\n\
@@ -487,7 +616,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 3:
         ts_field_name = sys.argv[3]
 
-    slamer = PINSLAMer(config_path, point_cloud_topic, ts_field_name)
+    slamer = PINSLAMer(config_path, bag_path, point_cloud_topic, imu_topic, ts_field_name)
     slamer.check_exit()
 
 

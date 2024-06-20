@@ -16,7 +16,7 @@ from utils.config import Config
 from dataset.slam_dataset import SLAMDataset
     
 class PoseGraphManager:
-    def __init__(self, config: Config, dataset: SLAMDataset):
+    def __init__(self, config: Config, dataset: SLAMDataset = None):
 
         self.config = config
 
@@ -52,9 +52,9 @@ class PoseGraphManager:
         self.drift_radius = 0.0 # m
         self.pgo_count = 0
 
-        self.imu_Preintegration_init(dataset)
+        if not self.config.source_from_ros:
+            self.imu_Preintegration_init(dataset)
         self.velocity_record = []
-
         # testing velocity
         self.imu_v_initial = []
         self.imu_v_output = []
@@ -66,9 +66,12 @@ class PoseGraphManager:
         params = gtsam.PreintegrationCombinedParams.MakeSharedU(self.GRAVITY) # Dwrong!OXTS coordinates are defined as x = forward, y = right, z = down// see imu dataformat: forward,left,top
         
         #self.imu_calib_initial_pose
-        self.T_Wi_I0, self.accBias, self.gyroBias, self.accel_sigma, self.gyro_sigma = self.imu_calibration(dataset)
-        # self.accBias = np.array([ 0,  2.09481966e-04, -1.50556073e-05])
-        # self.gyroBias = np.array([-1.35759117e-04,  1.82918979e-06, -1.39241744e-03]) #-1.39241744e-03
+        if self.config.source_from_ros:
+            self.T_Wi_I0, self.accBias, self.gyroBias, self.accel_sigma, self.gyro_sigma = self.imu_calibration_ros(dataset)
+        else:
+            self.T_Wi_I0, self.accBias, self.gyroBias, self.accel_sigma, self.gyro_sigma = self.imu_calibration_kitti360(dataset)
+            # self.accBias = np.array([ 0,  2.09481966e-04, -1.50556073e-05])
+            # self.gyroBias = np.array([-1.35759117e-04,  1.82918979e-06, -1.39241744e-03]) #-1.39241744e-03
         self.imu_bias = gtsam.imuBias.ConstantBias(self.accBias, self.gyroBias)
         
         # Some arbitrary noise sigmas
@@ -128,8 +131,94 @@ class PoseGraphManager:
             self.pim.resetIntegration() # -- preintegration testing --- 
         return predicted_pose_homo
         
+    def imu_calibration_ros(self, dataset: SLAMDataset, visual=False, gravity_align=True):
+        imu_curinter = dataset.imu_curinter
+        num_samples = len(imu_curinter['acc'])
+
+        # Calculate averages
+        if num_samples > 0:
+            accel_avg = np.mean(imu_curinter['acc'], axis=0)
+            gyro_avg = np.mean(imu_curinter['gyro'], axis=0)
+
+        grav_vec = np.array([0, 0, self.GRAVITY])
+
+        if gravity_align:
+            # Calculate initial orientation from gravity
+            grav_dir = accel_avg / np.linalg.norm(accel_avg) # (normalize to avoid scale, only rot needed)
+            grav_target = np.array([0, 0, 1])  # Z-up coordinate system
+
+            # Calculate angles - Z-axis is up (z = 1 in gravity vector)
+            pitch = np.arcsin(-grav_dir[0])  # rotation around y-axis
+            roll = np.arcsin(grav_dir[1] / np.cos(pitch))  # rotation around x-axis
+            # Create rotation matrices for roll and pitch
+            roll_matrix = R.from_euler('x', roll).as_matrix()
+            pitch_matrix = R.from_euler('y', pitch).as_matrix()
+            
+            # Combine roll and pitch into a single rotation matrix
+            rotation_matrix = pitch_matrix @ roll_matrix
+
+            # Apply rotation matrix to the calibrated initial pose
+            calibrated_initial_pose = np.eye(4)
+            calibrated_initial_pose[:3, :3] = rotation_matrix
+            print('-----------calibration imu initial pose ---------------',calibrated_initial_pose)
+
+            # Compute biases adjusted by initial pose
+            grav_corrected =  np.linalg.inv(calibrated_initial_pose[:3, :3]) @ np.array([0, 0, self.GRAVITY])
+            accel_bias = accel_avg - grav_corrected
+            gyro_bias = gyro_avg
+
+        else:
+            # # Bias computation using average
+            gyro_bias = gyro_avg
+            accel_bias = accel_avg - grav_vec
+            calibrated_initial_pose = np.eye(4)
+
+        timestamps = imu_curinter['dt']
+        # Calculate max-min range for sigma initialization
+        gyro_sigma = (imu_curinter['gyro'].max(axis=0) - imu_curinter['gyro'].min(axis=0)) / 2
+        accel_sigma = (imu_curinter['acc'].max(axis=0) - imu_curinter['acc'].min(axis=0)) / 2
+        
+        # V- Plotting the IMU data
+        if visual:            
+            fig, axs = plt.subplots(2, 1, figsize=(10, 8))
+            # Gyroscope data
+            axs[0].plot(timestamps, imu_curinter['gyro'][:, 0], label='Gyro X', color='r')
+            axs[0].plot(timestamps, imu_curinter['gyro'][:, 1], label='Gyro Y', color='g')
+            axs[0].plot(timestamps, imu_curinter['gyro'][:, 2], label='Gyro Z', color='b')
+            axs[0].axhline(gyro_bias[0], color='r', linestyle='--', label='Bias X')
+            axs[0].axhline(gyro_bias[1], color='g', linestyle='--', label='Bias Y')
+            axs[0].axhline(gyro_bias[2], color='b', linestyle='--', label='Bias Z')
+            axs[0].set_title('Gyroscope Data')
+            axs[0].set_xlabel('Time [s]')
+            axs[0].set_ylabel('Angular Velocity [rad/s]')
+            axs[0].legend()
+            axs[0].grid(True)
+            # Display gyro sigmas on the plot
+            axs[0].text(0.05, 0.95, f'Gyro Sigma X: {gyro_sigma[0]:.6f}\nGyro Sigma Y: {gyro_sigma[1]:.6f}\nGyro Sigma Z: {gyro_sigma[2]:.6f}',
+                    transform=axs[0].transAxes, fontsize=10, verticalalignment='top')
+            # Accelerometer data
+            axs[1].plot(timestamps, imu_curinter['acc'][:, 0], label='Accel X', color='r')
+            axs[1].plot(timestamps, imu_curinter['acc'][:, 1], label='Accel Y', color='g')
+            axs[1].plot(timestamps, imu_curinter['acc'][:, 2], label='Accel Z', color='b')
+            axs[1].axhline(accel_bias[0], color='r', linestyle='--', label='Bias X')
+            axs[1].axhline(accel_bias[1], color='g', linestyle='--', label='Bias Y')
+            axs[1].axhline(accel_bias[2] + self.GRAVITY, color='b', linestyle='--', label='Bias Z + Gravity')
+            axs[1].set_title('Accelerometer Data')
+            axs[1].set_xlabel('Time [s]')
+            axs[1].set_ylabel('Linear Acceleration [m/s^2]')
+            axs[1].legend()
+            axs[1].grid(True)
+            # Display accel sigmas on the plot
+            axs[1].text(0.05, 0.95, f'Accel Sigma X: {accel_sigma[0]:.6f}\nAccel Sigma Y: {accel_sigma[1]:.6f}\nAccel Sigma Z: {accel_sigma[2]:.6f}',
+                    transform=axs[1].transAxes, fontsize=10, verticalalignment='top')
+
+            plt.tight_layout()
+            plt.show()
+
+        return calibrated_initial_pose, gyro_bias, accel_bias, accel_sigma, gyro_sigma # array(3)
     
-    def imu_calibration(self, dataset: SLAMDataset, imu_calibration_steps=30, visual=False, gravity_align=True):
+
+    def imu_calibration_kitti360(self, dataset: SLAMDataset, imu_calibration_steps=30, visual=False, gravity_align=True):
         #
         num_samples = 0
         gyro_avg = np.zeros(3)
@@ -142,6 +231,7 @@ class PoseGraphManager:
         # for idx in range(int(10*imu_calibration_time)):
         #     if dataset.ts_rawimu[idx].timestamp() - dataset.ts_rawimu[0].timestamp() < imu_calibration_time:
         
+
         for idx in range(imu_calibration_steps):
             num_samples += 1
 

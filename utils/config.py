@@ -14,6 +14,7 @@ class Config:
 
         # settings
         self.name: str = "dummy"  # experiment name
+        self.source_from_ros: bool = False
 
         self.run_path: str = ""
 
@@ -342,7 +343,9 @@ class Config:
             self.pose_path = config_args["setting"].get("pose_path", "")
             self.calib_path = config_args["setting"].get("calib_path", "")
             self.calib360_path = config_args["setting"].get("calib360_path", "")
-
+            
+            self.source_from_ros = config_args["setting"].get("source_from_ros", False)
+            
             # optional, when semantic mapping is on [semantic]
             self.semantic_on = config_args["setting"].get("semantic_on", False) 
             if self.semantic_on:
