@@ -128,88 +128,32 @@ class PINSLAMer:
 
 
         # TODO: config - the reading of rosbag
-        rosbag_offline = True
-        if rosbag_offline:
-            # Open the rosbag and read messages 
-            imu_buffer = []
-            self.lidar_curframe = {}
-            last_lidar_timestamp = None
-            lidar_frame_count = 0
-            calibration_frame_count = 3  # Number of LiDAR frames to use for IMU calibration
+        self.imu_buffer = []
+        self.lidar_curframe = {}
+        # self.last_lidar_timestamp = None
+        self.lidar_frame_count = 0
+        self.calibration_frame_count = 3   # Number of LiDAR frames to use for IMU calibration
 
+        self.rosbag_offline = True
+        if self.rosbag_offline:
+            # Open the rosbag and read messages 
             with rosbag.Bag(bag_path, 'r') as bag:
                 for topic, msg, t in bag.read_messages(topics=[point_cloud_topic, imu_topic]):
                     if topic == imu_topic:
                         # Append IMU data to the buffer
-                        imu_buffer.append(msg)
+                        self.imu_buffer.append(msg)
                     elif topic == point_cloud_topic:
-                        lidar_frame_count += 1
-                        lidar_timestamp = dt.datetime.fromtimestamp(msg.header.stamp.secs)
-                        lidar_timestamp += dt.timedelta(microseconds=msg.header.stamp.nsecs / 1000) 
-                        self.dataset.lidar_frame_ts['last_ts'] = last_lidar_timestamp
-                        self.dataset.lidar_frame_ts['cur_ts'] = lidar_timestamp
-
-                        # if lidar_frame_count > self.config.end_frame:
-                        #     break
-
-                        if lidar_frame_count <= calibration_frame_count:
-                            # Collect IMU data for calibration
-                            continue  # Skip further processing for initial calibration frames
-
-
-                        imu_timestamps = [dt.datetime.fromtimestamp(imu_msg.header.stamp.secs) + dt.timedelta(microseconds=imu_msg.header.stamp.nsecs / 1000) for imu_msg in imu_buffer]
-                        relevant_imu_indices = []
-                        
-                        if last_lidar_timestamp is None:
-                            last_index = 0
-                        else:
-                            # Find the closest IMU timestamps for both the last and current LiDAR frames
-                            last_index = find_closest_timestamp_index(last_lidar_timestamp, imu_timestamps)
-                        
-                        current_index = find_closest_timestamp_index(lidar_timestamp, imu_timestamps)
-
-                        assert last_index < current_index
-                        relevant_imu_indices = range(last_index, current_index) # + 1
-                        # else:
-                        #     relevant_imu_indices = [last_index, current_index]
-                      
-
-                        # Extract data from relevant IMU messages
-                        linear_accelerations = []
-                        angular_velocities = []
-                        imu_dt = []
-                        for idx in relevant_imu_indices:
-                            imu_msg = imu_buffer[idx]
-                            linear_accelerations.append([imu_msg.linear_acceleration.x,
-                                                        imu_msg.linear_acceleration.y,
-                                                        imu_msg.linear_acceleration.z])
-                            angular_velocities.append([imu_msg.angular_velocity.x,
-                                                    imu_msg.angular_velocity.y,
-                                                    imu_msg.angular_velocity.z])
-                            imu_dt.append(dt.datetime.timestamp(imu_timestamps[idx+1]) - dt.datetime.timestamp(imu_timestamps[idx]))
-
-                        assert len(linear_accelerations) == len(angular_velocities) == len(imu_dt)
-                        self.dataset.ts_raw_imu_curinterval = imu_timestamps[last_index:current_index+1]
-                        self.dataset.imu_curinter = {
-                            'dt': np.array(imu_dt),
-                            'acc': np.array(linear_accelerations),
-                            'gyro': np.array(angular_velocities)
-                        }
-
-                        # Remove used IMU messages from the buffer
-                        imu_buffer = [imu_msg for i, imu_msg in enumerate(imu_buffer) if i >= current_index]
-                        
-                        # -- lidar
-                        # point_cloud_messages.append(msg)
-                        last_lidar_timestamp = lidar_timestamp
-
+                        self.process_lidar_imu(msg)
                         # -- 
+                        if self.lidar_frame_count <= self.calibration_frame_count:
+                            # Collect IMU data for calibration
+                            continue
                         self.frame_callback(msg)
 
         else:        
-            rospy.Subscriber(imu_topic, Imu, self.imu_callback, queue_size=100)
+            rospy.Subscriber(imu_topic, Imu, self.imu_callback, queue_size=10000)
             # for each frame -- run the rosbag in terminal
-            rospy.Subscriber(point_cloud_topic, PointCloud2, self.frame_callback)
+            rospy.Subscriber(point_cloud_topic, PointCloud2, self.process_lidar_imu)
 
             # # Set up the subscriber with functools.partial to pass additional arguments
             # #rospy.Subscriber(point_cloud_topic, PointCloud2, partial(self.frame_callback, a=1, b=2, c=3))
@@ -241,9 +185,76 @@ class PINSLAMer:
 
         return EmptyResponse()
 
+    def process_lidar_imu(self, lidar_msg):
+        self.lidar_frame_count += 1
+        lidar_timestamp = dt.datetime.fromtimestamp(lidar_msg.header.stamp.secs)
+        lidar_timestamp += dt.timedelta(microseconds=lidar_msg.header.stamp.nsecs / 1000) 
+        # TO-DO: read last ts in lidar msg
+        lidar_points_ts =  pc2.read_points(lidar_msg, field_names=(ts_field_name), skip_nans=True) # nanosec
+        lidar_last_point_ts = np.array(list(lidar_points_ts))[-1,0]
+        lidar_last_point_ts = dt.timedelta(microseconds=lidar_last_point_ts/1000) # test: datetime.timedelta(microseconds=99841) - 0 ~= 0.1
+
+        self.dataset.lidar_frame_ts['start_ts'] = lidar_timestamp #self.last_lidar_timestamp
+        self.dataset.lidar_frame_ts['end_ts'] = lidar_timestamp + lidar_last_point_ts
+
+        # if lidar_frame_count > self.config.end_frame:
+        #     break
+
+        if self.lidar_frame_count <= self.calibration_frame_count:
+            # Collect IMU data for calibration
+            return  # Skip further processing for initial calibration frames
+
+
+        imu_timestamps = [dt.datetime.fromtimestamp(imu_msg.header.stamp.secs) + dt.timedelta(microseconds=imu_msg.header.stamp.nsecs / 1000) for imu_msg in self.imu_buffer]
+        relevant_imu_indices = []
+        
+        # if self.last_lidar_timestamp is None:
+        if self.lidar_frame_count == self.calibration_frame_count+1:
+            last_index = 0
+            # TO-DO: change last_lidar_ts as a flag for imu calibration checking
+        else:
+            # Find the closest IMU timestamps for both the last and current LiDAR frames
+            last_index = find_closest_timestamp_index(self.dataset.lidar_frame_ts['start_ts'], imu_timestamps)
+        
+        current_index = find_closest_timestamp_index(self.dataset.lidar_frame_ts['end_ts'], imu_timestamps)
+
+        assert last_index < current_index
+        relevant_imu_indices = range(last_index, current_index) # + 1
+
+        # Extract data from relevant IMU messages
+        linear_accelerations = []
+        angular_velocities = []
+        imu_dt = []
+        for idx in relevant_imu_indices:
+            imu_msg = self.imu_buffer[idx]
+            linear_accelerations.append([imu_msg.linear_acceleration.x,
+                                        imu_msg.linear_acceleration.y,
+                                        imu_msg.linear_acceleration.z])
+            angular_velocities.append([imu_msg.angular_velocity.x,
+                                    imu_msg.angular_velocity.y,
+                                    imu_msg.angular_velocity.z])
+            imu_dt.append(dt.datetime.timestamp(imu_timestamps[idx+1]) - dt.datetime.timestamp(imu_timestamps[idx]))
+
+        assert len(linear_accelerations) == len(angular_velocities) == len(imu_dt)
+        self.dataset.ts_raw_imu_curinterval = imu_timestamps[last_index:current_index+1]
+        self.dataset.imu_curinter = {
+            'dt': np.array(imu_dt),
+            'acc': np.array(linear_accelerations),
+            'gyro': np.array(angular_velocities)
+        }
+
+        # Remove used IMU messages from the buffer
+        self.imu_buffer = [imu_msg for i, imu_msg in enumerate(self.imu_buffer) if i >= current_index]
+        
+        # -- lidar
+        # point_cloud_messages.append(msg)
+        # self.last_lidar_timestamp = lidar_timestamp
+
+        if not self.rosbag_offline:
+            self.frame_callback(lidar_msg)
 
     def imu_callback(self, imu_msg):
-        rospy.loginfo("IMU message received")
+        # rospy.loginfo("IMU message received")
         self.imu_buffer.append(imu_msg)
 
 
@@ -598,7 +609,7 @@ if __name__ == "__main__":
     config_path = rospy.get_param('~config_path', "./config/lidar_slam/run_ncd_128.yaml")
     point_cloud_topic = rospy.get_param('~point_cloud_topic', "/os_cloud_node/points")
     imu_topic = rospy.get_param('~imu_topic', "/os_cloud_node/imu")
-    ts_field_name = rospy.get_param('~point_timestamp_field_name', "time")
+    ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
 
     bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
     

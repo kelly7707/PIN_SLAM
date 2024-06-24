@@ -241,8 +241,8 @@ class SLAMDataset(Dataset):
         self.T_Wl_Lcur = np.eye(4)
         self.cur_pose_torch = torch.tensor(self.T_Wl_Lcur, device=self.device, dtype=self.dtype)
 
-        # pc_data = point_cloud2.read_points(lidar_msg, field_names=("x", "y", "z", ts_field_name), skip_nans=True)
-        pc_data = point_cloud2.read_points(lidar_msg, field_names=("x", "y", "z"), skip_nans=True)
+        pc_data = point_cloud2.read_points(lidar_msg, field_names=("x", "y", "z", ts_field_name), skip_nans=True)
+        # pc_data = point_cloud2.read_points(lidar_msg, field_names=("x", "y", "z"), skip_nans=True)
         # convert the point cloud data to a numpy array
         data = np.array(list(pc_data))
 
@@ -251,13 +251,16 @@ class SLAMDataset(Dataset):
         # how to read the timestamp information
         if ts_col > data.shape[1]-1:
             point_ts = None
-        else:
+        else: # TODO: check 
             point_ts = data[:, ts_col]
 
             if self.processed_frame == 0:
                 self.shift_ts = point_ts[0]
 
             point_ts = point_ts - self.shift_ts
+            # point_ts = np.vectorize(dt.timedelta)(microseconds=point_ts / 1000).tolist()
+
+            # TO-DO: nanosec
 
         # print(point_ts)
         
@@ -278,6 +281,8 @@ class SLAMDataset(Dataset):
         
         if self.config.deskew:
             self.get_point_ts(point_ts)
+            # TO-DO: read ts// self.
+            # ts_data = point_cloud2.read_points(lidar_msg, field_names=(ts_field_name), skip_nans=True)
 
            
 
@@ -664,6 +669,8 @@ class SLAMDataset(Dataset):
             # else:
             #     self.cur_source_normals = None
 
+            
+            # TODO: not only for frame_id>0
             # deskewing (motion undistortion) for source point cloud
             if self.config.deskew and not self.lose_track:
                 # self.cur_source_points = deskewing(self.cur_source_points, cur_source_ts, 
@@ -678,8 +685,8 @@ class SLAMDataset(Dataset):
                 # assert np.allclose(T_Lcur_Limu_deskewing[-1].numpy(), np.eye(4))  # the transformed poses of last imu prediction should be equals to Identity
 
                 if self.config.source_from_ros:
-                    lidar_last_ts = self.lidar_frame_ts['last_ts']
-                    lidar_cur_ts = self.lidar_frame_ts['cur_ts']
+                    lidar_last_ts = self.lidar_frame_ts['start_ts']
+                    lidar_cur_ts = self.lidar_frame_ts['end_ts']
                 else:
                     lidar_last_ts = self.ts_pc[frame_id-1]
                     lidar_cur_ts = self.ts_pc[frame_id]
@@ -953,7 +960,10 @@ def find_closest_timestamp_index(target_timestamp, sorted_timestamps):
     else:
         # Check if the target timestamp is closer to the current index or the previous index
         before = abs(sorted_timestamps[idx - 1] - target_timestamp)
-        after = abs(sorted_timestamps[idx] - target_timestamp)
+        if idx < len(sorted_timestamps):
+            after = abs(sorted_timestamps[idx] - target_timestamp)
+        else:
+            after = before
         return idx - 1 if before <= after else idx
 
 
