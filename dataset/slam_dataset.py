@@ -679,6 +679,8 @@ class SLAMDataset(Dataset):
                     lidar_last_ts = self.ts_pc[frame_id-1]
                     lidar_cur_ts = self.ts_pc[frame_id]
                 self.cur_source_points = deskewing_IMU(self.cur_source_points, cur_source_ts, self.ts_raw_imu_curinterval[1:], T_Lcur_Limu_deskewing, np.linalg.inv(T_Llast_Lcur), lidar_last_ts, lidar_cur_ts)
+                # test
+                self.cur_point_cloud_torch = self.cur_source_points.clone()
             # print("# Source point for registeration : ", cur_source_torch.shape[0])
     
         T4 = get_time()
