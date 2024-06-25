@@ -87,7 +87,7 @@ class PINSLAMer:
 
         # pose graph manager (for back-end optimization) initialization
         self.pgm = PoseGraphManager(self.config)
-        if self.config.pgo_on:     
+        if self.config.pgo_on:     # default off
             self.pgm.add_pose_prior(0, np.eye(4), fixed=True)
 
         # loop closure detector
@@ -149,6 +149,7 @@ class PINSLAMer:
                             # Collect IMU data for calibration
                             continue
                         self.frame_callback(msg)
+                        # print(f'---- cur frame ---:',self.lidar_frame_count)
 
         else:        
             rospy.Subscriber(imu_topic, Imu, self.imu_callback, queue_size=10000)
@@ -189,11 +190,12 @@ class PINSLAMer:
         self.lidar_frame_count += 1
         lidar_timestamp = dt.datetime.fromtimestamp(lidar_msg.header.stamp.secs)
         lidar_timestamp += dt.timedelta(microseconds=lidar_msg.header.stamp.nsecs / 1000) 
-        # TO-DO: read last ts in lidar msg
+        # read last ts in lidar msg
         lidar_points_ts =  pc2.read_points(lidar_msg, field_names=(ts_field_name), skip_nans=True) # nanosec
         lidar_last_point_ts = np.array(list(lidar_points_ts))[-1,0]
         lidar_last_point_ts = dt.timedelta(microseconds=lidar_last_point_ts/1000) # test: datetime.timedelta(microseconds=99841) - 0 ~= 0.1
 
+        assert np.isclose(lidar_last_point_ts.total_seconds(), 0.1, atol=0.002), f"Timestamp mismatch: {lidar_last_point_ts.total_seconds()} != 0.1"
         self.dataset.lidar_frame_ts['start_ts'] = lidar_timestamp #self.last_lidar_timestamp
         self.dataset.lidar_frame_ts['end_ts'] = lidar_timestamp + lidar_last_point_ts
 
@@ -211,7 +213,7 @@ class PINSLAMer:
         # if self.last_lidar_timestamp is None:
         if self.lidar_frame_count == self.calibration_frame_count+1:
             last_index = 0
-            # TO-DO: change last_lidar_ts as a flag for imu calibration checking
+            # TODO: calibration & 1st frame preintegration
         else:
             # Find the closest IMU timestamps for both the last and current LiDAR frames
             last_index = find_closest_timestamp_index(self.dataset.lidar_frame_ts['start_ts'], imu_timestamps)

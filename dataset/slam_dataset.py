@@ -251,7 +251,7 @@ class SLAMDataset(Dataset):
         # how to read the timestamp information
         if ts_col > data.shape[1]-1:
             point_ts = None
-        else: # TODO: check 
+        else: # TO-DO: check 
             point_ts = data[:, ts_col]
 
             if self.processed_frame == 0:
@@ -259,7 +259,6 @@ class SLAMDataset(Dataset):
 
             point_ts = point_ts - self.shift_ts
             # point_ts = np.vectorize(dt.timedelta)(microseconds=point_ts / 1000).tolist()
-
             # TO-DO: nanosec
 
         # print(point_ts)
@@ -271,19 +270,8 @@ class SLAMDataset(Dataset):
 
         self.cur_point_cloud_torch = torch.tensor(point_cloud, device=self.device, dtype=self.dtype)
 
-
-        # if self.processed_frame > 0:
-        #     # IMU--1 load IMU
-        #     self.imu_curinter = {}
-        #     self.imu_curinter['dt'] = imu_curinterval['dt']
-        #     self.imu_curinter['acc'] = imu_curinterval['acc']
-        #     self.imu_curinter['gyro'] = imu_curinterval['gyro']
-        
         if self.config.deskew:
             self.get_point_ts(point_ts)
-            # TO-DO: read ts// self.
-            # ts_data = point_cloud2.read_points(lidar_msg, field_names=(ts_field_name), skip_nans=True)
-
            
 
     def read_frame(self, frame_id):
@@ -428,7 +416,7 @@ class SLAMDataset(Dataset):
     # point-wise timestamp is now only used for motion undistortion (deskewing)
     def get_point_ts(self, point_ts = None):
         if self.config.deskew:
-            if point_ts is not None and self.config.valid_ts_in_points: 
+            if point_ts is not None and self.config.valid_ts_in_points: # ros default
                 self.cur_point_ts_torch = torch.tensor(point_ts, device=self.device, dtype=self.dtype)
             else: # default
                 H = 64
@@ -954,9 +942,15 @@ class SLAMDataset(Dataset):
 def find_closest_timestamp_index(target_timestamp, sorted_timestamps):
     # Use searchsorted to find the insertion point
     idx = np.searchsorted(sorted_timestamps, target_timestamp, side='left')
+    if idx == len(sorted_timestamps):
+        print('------- the last imu --------------')
+        if not np.isclose(sorted_timestamps[idx-1].timestamp() * 1e6,target_timestamp.timestamp() * 1e6, atol=0.01):
+            print('------- imu wrong here --------------')
+    # assert np.isclose(sorted_timestamps[idx].timestamp() * 1e6,target_timestamp.timestamp() * 1e6), 'IMU and LiDAR timestamps are not close'
     # Determine the closest index by checking boundaries
     if idx == 0:
         return 0
+        assert 1 == 0
     else:
         # Check if the target timestamp is closer to the current index or the previous index
         before = abs(sorted_timestamps[idx - 1] - target_timestamp)
@@ -964,6 +958,7 @@ def find_closest_timestamp_index(target_timestamp, sorted_timestamps):
             after = abs(sorted_timestamps[idx] - target_timestamp)
         else:
             after = before
+            assert idx == len(sorted_timestamps), 'wrong imu data'
         return idx - 1 if before <= after else idx
 
 

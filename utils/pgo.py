@@ -87,7 +87,7 @@ class PoseGraphManager:
 
         self.pim = gtsam.PreintegratedCombinedMeasurements(params, self.imu_bias)
 
-        self.velocity = np.array([0, 0, 0]) # np.array([ 0.0005, -0.0007, -0.0058])# np.array([0, 0, 0])
+        self.velocity = np.array([0, 0, 0]) # TODO np.array([ 0.0005, -0.0007, -0.0058])# np.array([0, 0, 0])
 
     # --- IMU
     def preintegration(self, acc, gyro, dts, last_pose, cur_id: int):
@@ -113,7 +113,6 @@ class PoseGraphManager:
             pose_each_frame_homo[:3,:3] = pose_each_frame.rotation().matrix()
             pose_each_frame_homo[:3,3] = pose_each_frame.translation()
             self.imu_prediction_poses_curinterval[i] = torch.tensor(pose_each_frame_homo)
-        # TODO: return pose for each imu frame,ts
 
         imu_prediction = self.pim.predict(initial_state, self.imu_bias)
         predicted_pose = imu_prediction.pose() # w2imu
