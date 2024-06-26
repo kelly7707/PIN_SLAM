@@ -17,7 +17,7 @@ class Decoder(nn.Module):
         
         super().__init__()
     
-        self.out_dim = out_dim
+        self.out_dim = out_dim #1
 
         bias_on = config.mlp_bias_on
 
@@ -28,10 +28,10 @@ class Decoder(nn.Module):
 
         if config.use_gaussian_pe:
             position_dim = config.pos_input_dim + 2 * config.pos_encoding_band
-        else:
-            position_dim = config.pos_input_dim * (2 * config.pos_encoding_band + 1)
+        else: # default
+            position_dim = config.pos_input_dim * (2 * config.pos_encoding_band + 1) # 3
             
-        feature_dim = config.feature_dim
+        feature_dim = config.feature_dim # 8
         input_layer_count = feature_dim + position_dim # 8+3
         
         if is_time_conditioned:

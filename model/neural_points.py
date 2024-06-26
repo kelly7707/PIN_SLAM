@@ -36,8 +36,8 @@ class NeuralPoints(nn.Module):
         if config.use_gaussian_pe:
             self.position_encoder_geo = GaussianFourierFeatures(config)
             self.position_encoder_color = GaussianFourierFeatures(config)
-        else:
-            self.position_encoder_geo = PositionalEncoder(config) # default
+        else: #default
+            self.position_encoder_geo = PositionalEncoder(config) 
             self.position_encoder_color = PositionalEncoder(config)
 
         self.mean_grid_sampling = False # NOTE: sample the gravity center of the points inside the voxel or keep the point that is closest to the voxel center
@@ -713,7 +713,7 @@ class PositionalEncoder(nn.Module):
         self.dimensionality = config.pos_input_dim
         self.base = torch.tensor(config.pos_encoding_base)
 
-        self.out_dim = self.dimensionality * (2 * self.num_bands + 1)
+        self.out_dim = self.dimensionality * (2 * self.num_bands + 1) # 3
 
         # self.num_bands = floor(feature_size/dimensionality/2)
 

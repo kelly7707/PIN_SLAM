@@ -88,8 +88,8 @@ class SLAMDataset(Dataset):
         self.poses_ref = [np.eye(4)] # only used when gt_pose_provided
 
         # TODO: config-calibration from kitti
-        calibration_kitti360 = False
-        if calibration_kitti360:
+        # calibration_kitti360 = False
+        if not self.config.source_from_ros:
             # calibration kitti 360
             self.calib360 = {}
             fileCameraToPose = os.path.join(config.calib360_path, 'calib_cam_to_pose.txt')
@@ -108,9 +108,9 @@ class SLAMDataset(Dataset):
             self.T_I_L = np.linalg.inv(self.T_L_I)
         
         # TODO config
-        calibration_newer_college = True
-        calib_file_path = 'data/Newer_College_Dataset/os_imu_lidar_transforms.yaml'
-        if calibration_newer_college:
+        # calibration_newer_college = True
+        if self.config.source_from_ros:
+            calib_file_path = 'data/Newer_College_Dataset/os_imu_lidar_transforms.yaml'
             with open(calib_file_path, 'r') as file:
                 calibration_data = yaml.safe_load(file)
             
@@ -259,7 +259,7 @@ class SLAMDataset(Dataset):
 
             point_ts = point_ts - self.shift_ts
             # point_ts = np.vectorize(dt.timedelta)(microseconds=point_ts / 1000).tolist()
-            # TO-DO: nanosec
+            # TO-DO: nanosec -> will be normalized to 0-1
 
         # print(point_ts)
         
@@ -680,7 +680,8 @@ class SLAMDataset(Dataset):
                     lidar_cur_ts = self.ts_pc[frame_id]
                 self.cur_source_points = deskewing_IMU(self.cur_source_points, cur_source_ts, self.ts_raw_imu_curinterval[1:], T_Lcur_Limu_deskewing, np.linalg.inv(T_Llast_Lcur), lidar_last_ts, lidar_cur_ts)
                 # test
-                self.cur_point_cloud_torch = self.cur_source_points.clone()
+                # self.cur_point_cloud_torch = self.cur_source_points.clone()
+                self.cur_point_cloud_torch = deskewing_IMU(self.cur_point_cloud_torch, self.cur_point_ts_torch, self.ts_raw_imu_curinterval[1:], T_Lcur_Limu_deskewing, np.linalg.inv(T_Llast_Lcur), lidar_last_ts, lidar_cur_ts)
             # print("# Source point for registeration : ", cur_source_torch.shape[0])
     
         T4 = get_time()
