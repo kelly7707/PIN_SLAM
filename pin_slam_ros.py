@@ -87,7 +87,7 @@ class PINSLAMer:
 
         # pose graph manager (for back-end optimization) initialization
         self.pgm = PoseGraphManager(self.config)
-        if self.config.pgo_on:     # default off
+        if self.config.pgo_on:     # default off - loop pgo
             self.pgm.add_pose_prior(0, np.eye(4), fixed=True)
 
         # loop closure detector
@@ -109,6 +109,11 @@ class PINSLAMer:
         self.frame_map_pub = rospy.Publisher("~frame/mapping", PointCloud2, queue_size=queue_size_)
         self.frame_reg_pub = rospy.Publisher("~frame/registration", PointCloud2, queue_size=queue_size_)
         self.map_pub = rospy.Publisher("~map/neural_points", PointCloud2, queue_size=queue_size_)
+        # test-deskewing
+        self.frame_source_reg_pub = rospy.Publisher("~test/input_reg", PointCloud2, queue_size=queue_size_)# points from source, used for reg, before deskewing
+        self.frame_pre_deskewing_map_pub = rospy.Publisher("~test/input_map", PointCloud2, queue_size=queue_size_) # points from source, used for mapping, before deskewing
+        self.frame_post_deskewing_map_pub = rospy.Publisher("~test/undistorted_map", PointCloud2, queue_size=queue_size_)# points from source, used for mapping, after deskewing
+        self.frame_reged_map_pub = rospy.Publisher("~test/registerd_map", PointCloud2, queue_size=queue_size_) # transformed points from mapping.process
         
         self.tf_broadcaster = tf2_ros.TransformBroadcaster()
 
@@ -129,6 +134,7 @@ class PINSLAMer:
 
         # TODO: config - the reading of rosbag
         self.imu_buffer = []
+        self.lidar_buffer = []
         self.lidar_curframe = {}
         # self.last_lidar_timestamp = None
         self.lidar_frame_count = 0
@@ -154,8 +160,23 @@ class PINSLAMer:
         else:        
             rospy.Subscriber(imu_topic, Imu, self.imu_callback, queue_size=10000)
             # for each frame -- run the rosbag in terminal
-            rospy.Subscriber(point_cloud_topic, PointCloud2, self.process_lidar_imu)
+            rospy.Subscriber(point_cloud_topic, PointCloud2, self.lidar_callback, queue_size=1000)
 
+            # Set the desired frequency
+            rate = rospy.Rate(50)  # 50 Hz
+
+            while not rospy.is_shutdown():
+                if self.lidar_buffer:
+                    cur_lidar_msg = self.lidar_buffer.pop(0)
+                    self.process_lidar_imu(cur_lidar_msg)
+                    if self.lidar_frame_count <= self.calibration_frame_count:
+                        # Collect IMU data for calibration
+                        continue
+                    self.frame_callback(cur_lidar_msg)
+                
+                # Sleep to maintain the 50 Hz rate
+                rate.sleep()
+            
             # # Set up the subscriber with functools.partial to pass additional arguments
             # #rospy.Subscriber(point_cloud_topic, PointCloud2, partial(self.frame_callback, a=1, b=2, c=3))
 
@@ -252,8 +273,8 @@ class PINSLAMer:
         # point_cloud_messages.append(msg)
         # self.last_lidar_timestamp = lidar_timestamp
 
-        if not self.rosbag_offline:
-            self.frame_callback(lidar_msg)
+    def lidar_callback(self, lidar_msg):    
+        self.lidar_buffer.append(lidar_msg)
 
     def imu_callback(self, imu_msg):
         # rospy.loginfo("IMU message received")
@@ -305,7 +326,8 @@ class PINSLAMer:
                 cur_edge_cov = cur_odom_cov if self.config.use_reg_cov_mat else None     
                 # --- between factor
                 imu_transform = self.dataset.T_I_L @ self.dataset.last_odom_tran @ self.dataset.T_L_I        
-                self.pgm.add_odometry_factor(self.dataset.processed_frame, self.dataset.processed_frame-1, imu_transform, cov = cur_edge_cov) # T_p<-c   # TODO: check- cur_edge_cov
+                # self.pgm.add_odometry_factor(self.dataset.processed_frame, self.dataset.processed_frame-1, imu_transform, cov = cur_edge_cov) # T_p<-c   # TODO: check- cur_edge_cov
+                self.pgm.add_pose_prior(self.dataset.processed_frame, np.linalg.inv(self.dataset.T_Wl_Wi) @ self.dataset.pgo_poses[self.dataset.processed_frame] @ self.dataset.T_L_I)
                 self.pgm.estimate_drift(self.dataset.travel_dist, self.dataset.processed_frame) # estimate the current drift
 
                 self.pgm.add_combined_IMU_factor(self.dataset.processed_frame, self.dataset.processed_frame-1)
@@ -504,7 +526,7 @@ class PINSLAMer:
             frame_mapping_pc2_msg = pc2.create_cloud(header, fields_xyz, frame_mapping_np)
             self.frame_map_pub.publish(frame_mapping_pc2_msg)
 
-        # point cloud for registration
+        # point cloud for registration (after deskewing in our case)
         if self.dataset.cur_source_points is not None:
             header = std_msgs.msg.Header()
             header.stamp = rospy.Time.now()
@@ -516,6 +538,33 @@ class PINSLAMer:
 
             frame_registration_pc2_msg = pc2.create_cloud(header, fields_xyz, frame_registration_np)
             self.frame_reg_pub.publish(frame_registration_pc2_msg)
+        
+        # -- deskewing testing
+        visual = True
+        if self.dataset.pre_deskewing_points_reg is not None:
+            header = std_msgs.msg.Header()
+            header.stamp = rospy.Time.now()
+            header.frame_id = self.sensor_frame_name 
+
+            # input_map (downsample once)
+            frame_pre_deskewing_map_np = self.dataset.pre_deskewing_points.detach().cpu().numpy().astype(np.float32)
+            frame_pre_deskewing_map_pc2_msg = pc2.create_cloud(header, fields_xyz, frame_pre_deskewing_map_np)
+            self.frame_pre_deskewing_map_pub.publish(frame_pre_deskewing_map_pc2_msg)
+
+            # input_reg (downsample twice for registration)
+            frame_source_reg_np = self.dataset.pre_deskewing_points_reg.detach().cpu().numpy().astype(np.float32)
+            frame_source_reg_pc2_msg = pc2.create_cloud(header, fields_xyz, frame_source_reg_np)
+            self.frame_source_reg_pub.publish(frame_source_reg_pc2_msg)
+
+            # - the same as self.dataset.cur_point_cloud_torch
+            # frame_post_deskewing_map_np = self.dataset.post_deskewing_points.detach().cpu().numpy().astype(np.float32)
+            # frame_post_deskewing_map_pc2_msg = pc2.create_cloud(header, fields_xyz, frame_post_deskewing_map_np)
+            # self.frame_post_deskewing_map_pub.publish(frame_post_deskewing_map_pc2_msg)
+            
+            # # - transformed/registered
+            # frame_reged_map_np = self.mapper.transformed_deskewed_map.detach().cpu().numpy().astype(np.float32)
+            # frame_reged_map_pc2_msg = pc2.create_cloud(header, fields_xyz, frame_reged_map_np)
+            # self.frame_reged_map_pub.publish( frame_reged_map_pc2_msg)
         
         if self.config.republish_raw_input:
             header = std_msgs.msg.Header()
@@ -633,5 +682,13 @@ if __name__ == "__main__":
     slamer.check_exit()
 
 
+    # todo: rosbag online -- having an infinite loop (50HZ) in the main function will prevent the program from reaching the check_exit function
+    # # Run check_exit in a separate thread
+    # exit_thread = Thread(target=slamer.check_exit)
+    # exit_thread.start()
 
+    # # Run the main processing loop
+    # slamer.main_loop()
+
+    # rospy.spin()
 

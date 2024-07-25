@@ -19,9 +19,9 @@ class Decoder(nn.Module):
     
         self.out_dim = out_dim #1
 
-        bias_on = config.mlp_bias_on
+        bias_on = config.mlp_bias_on #True
 
-        self.use_leaky_relu = False
+        self.use_leaky_relu = False 
 
         self.num_bands = config.pos_encoding_band
         self.dimensionality = config.pos_input_dim # 3
@@ -29,7 +29,7 @@ class Decoder(nn.Module):
         if config.use_gaussian_pe:
             position_dim = config.pos_input_dim + 2 * config.pos_encoding_band
         else: # default
-            position_dim = config.pos_input_dim * (2 * config.pos_encoding_band + 1) # 3
+            position_dim = config.pos_input_dim * (2 * config.pos_encoding_band + 1) #  3 = 3*(0+1)
             
         feature_dim = config.feature_dim # 8
         input_layer_count = feature_dim + position_dim # 8+3
@@ -43,12 +43,16 @@ class Decoder(nn.Module):
         for i in range(hidden_level):
             if i == 0:
                 layers.append(nn.Linear(input_layer_count, hidden_dim, bias_on)) # 11, 64
+                # layers.extend([
+                #     nn.Linear(input_layer_count, hidden_dim, bias_on),
+                #     nn.ReLU(inplace=True)
+                # ])
             else:
                 layers.append(nn.Linear(hidden_dim, hidden_dim, bias_on))
-        self.layers = nn.ModuleList(layers) # hidden_level = 1
-        self.lout = nn.Linear(hidden_dim, out_dim, bias_on) # 64, 1
+        self.layers = nn.ModuleList(layers) # hidden_level = 1 (11, 64)
+        self.lout = nn.Linear(hidden_dim, out_dim, bias_on) # (64, 1)
 
-        if config.main_loss_type == 'bce':
+        if config.main_loss_type == 'bce': # default
             self.sdf_scale = config.logistic_gaussian_ratio*config.sigma_sigmoid_m
         else: # l1, l2 or zhong loss
             self.sdf_scale = 1.

@@ -48,18 +48,18 @@ class Mapper():
         self.lose_track: bool = False
 
         self.require_gradient = False
-        if config.ekional_loss_on or config.proj_correction_on or config.consistency_loss_on:
-            self.require_gradient = True
+        if config.ekional_loss_on or config.proj_correction_on or config.consistency_loss_on: 
+            self.require_gradient = True 
         if config.numerical_grad and not config.proj_correction_on and not config.consistency_loss_on:
-            self.require_gradient = False
+            self.require_gradient = False #
 
         self.total_iter: int = 0
 
-        self.sdf_scale = config.logistic_gaussian_ratio*config.sigma_sigmoid_m
+        self.sdf_scale = config.logistic_gaussian_ratio*config.sigma_sigmoid_m  # ~=0.04
 
         # initialize the data sampler
         self.sampler = DataSampler(config)
-        self.ray_sample_count = 1 + config.surface_sample_n + config.free_behind_n + config.free_front_n
+        self.ray_sample_count = 1 + config.surface_sample_n + config.free_behind_n + config.free_front_n # ~=7
 
         self.new_idx = None
 
@@ -75,6 +75,9 @@ class Mapper():
         self.normal_label_pool = torch.empty((0, 3), device=self.device, dtype=self.dtype)
         self.weight_pool = torch.empty((0), device=self.device, dtype=self.dtype)
         self.time_pool = torch.empty((0), device=self.device, dtype=torch.long)
+
+        # -- visual test
+        self.transformed_deskewed_map = None
 
     def dynamic_filter(self, points_torch, type_2_on: bool = False):
 
@@ -119,7 +122,7 @@ class Mapper():
         frame_origin_torch = cur_pose_torch[:3,3]
         frame_orientation_torch = cur_pose_torch[:3,:3]
 
-        # point in local sensor frame 
+        # point in local sensor frame (cur_point_cloud_torch)
         frame_point_torch = point_cloud_torch[:,:3]
         
         # dynamic filtering
@@ -165,10 +168,13 @@ class Mapper():
                 update_points = coord
             else: # default
                 update_points = coord[torch.abs(sdf_label) < self.config.surface_sample_range_m * self.config.map_surface_ratio, :]
-                update_points = transform_torch(update_points, cur_pose_torch) 
+                update_points = transform_torch(update_points, cur_pose_torch) # local -> global
         else:   
             update_points = transform_torch(frame_point_torch, cur_pose_torch) 
 
+        # # -- deskewing test
+        # self.transformed_deskewed_map = update_points.clone()
+        
         # prune map and recreate hash
         if self.config.prune_map_on: #default off
             if self.neural_points.prune_map(self.config.max_prune_certainty):

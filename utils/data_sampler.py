@@ -32,7 +32,7 @@ class DataSampler():
         freespace_behind_sample_n = self.config.free_behind_n
         freespace_front_sample_n = self.config.free_front_n
 
-        all_sample_n = surface_sample_n+freespace_behind_sample_n+freespace_front_sample_n+1 # 1 as the exact measurement
+        all_sample_n = surface_sample_n+freespace_behind_sample_n+freespace_front_sample_n+1 # 1 as the exact measurement #default ~=7
         free_front_min_ratio = self.config.free_sample_begin_ratio
         free_sample_end_dist = self.config.free_sample_end_dist_m
         # clearance_dist_scaled = self.config.clearance_dist_m * self.config.scale
@@ -41,7 +41,7 @@ class DataSampler():
 
         # get sample points
         point_num = points_torch.shape[0]
-        distances = torch.linalg.norm(points_torch, dim=1, keepdim=True) # ray distances (scaled)
+        distances = torch.linalg.norm(points_torch, dim=1, keepdim=True) # ray distances (scaled) # in local frame (distance from sensor to each point)
         
         # Part 0. the exact measured point
         measured_sample_displacement = torch.zeros_like(distances)
@@ -49,10 +49,10 @@ class DataSampler():
 
         # Part 1. close-to-surface uniform sampling 
         # uniform sample in the close-to-surface range (+- range)
-        surface_sample_displacement = torch.randn(point_num*surface_sample_n, 1, device=dev)*surface_sample_range 
+        surface_sample_displacement = torch.randn(point_num*surface_sample_n, 1, device=dev)*surface_sample_range  # Generates a tensor of random values drawn from a normal distribution (mean=0, std=1) * scales the displacements to the desired range --> creates random displacements around the surface of the objects.
         
         repeated_dist = distances.repeat(surface_sample_n,1)
-        surface_sample_dist_ratio = surface_sample_displacement/repeated_dist + 1.0 # 1.0 means on the surface
+        surface_sample_dist_ratio = surface_sample_displacement/repeated_dist + 1.0 # (dist_ratio) 1.0 means on the surface
         if sem_label_torch is not None:
             surface_sem_label_tensor = sem_label_torch.repeat(1, surface_sample_n).transpose(0,1)
         if color_torch is not None:
@@ -103,8 +103,8 @@ class DataSampler():
         T1 = get_time()
 
         # all together
-        all_sample_displacement = torch.cat((measured_sample_displacement, surface_sample_displacement, free_sample_front_displacement, free_sample_behind_displacement),0)
-        all_sample_dist_ratio = torch.cat((measured_sample_dist_ratio, surface_sample_dist_ratio, free_sample_front_dist_ratio, free_sample_behind_dist_ratio),0)
+        all_sample_displacement = torch.cat((measured_sample_displacement, surface_sample_displacement, free_sample_front_displacement, free_sample_behind_displacement),0) # around 0
+        all_sample_dist_ratio = torch.cat((measured_sample_dist_ratio, surface_sample_dist_ratio, free_sample_front_dist_ratio, free_sample_behind_dist_ratio),0) # around 1
         
         repeated_points = points_torch.repeat(all_sample_n,1)
         repeated_dist = distances.repeat(all_sample_n,1)

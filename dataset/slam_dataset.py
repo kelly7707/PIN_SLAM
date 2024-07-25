@@ -214,6 +214,11 @@ class SLAMDataset(Dataset):
         self.cur_source_normals = None
         self.cur_source_colors = None
 
+        # source data -- deskewing testing
+        self.pre_deskewing_points = None
+        self.post_deskewing_points = None
+        self.pre_deskewing_points_reg = None
+
         if not self.config.source_from_ros: # kitti360
             # ts # default empty in ros
             self.ts_pc = loadTimestamps(self.config.pc_path)
@@ -457,15 +462,15 @@ class SLAMDataset(Dataset):
             crop_max_range = self.config.max_range
         
         # adaptive
-        train_voxel_m = (crop_max_range/self.config.max_range) * self.config.vox_down_m
-        source_voxel_m = (crop_max_range/self.config.max_range) * self.config.source_vox_down_m
+        train_voxel_m = (crop_max_range/self.config.max_range) * self.config.vox_down_m # 1st, input downsample (smaller resolution -> denser pc)
+        source_voxel_m = (crop_max_range/self.config.max_range) * self.config.source_vox_down_m # 2nd, further downsample for registration (larger)
 
         # down sampling (together with the color and semantic entities)
         original_count = self.cur_point_cloud_torch.shape[0]
         if self.config.rand_downsample:
             kept_count = int(original_count*self.config.rand_down_r)
             idx = torch.randint(0, original_count, (kept_count,), device=self.device)
-        else:
+        else: #first downsample using train_voxel_m
             idx = voxel_down_sample_torch(self.cur_point_cloud_torch[:,:3], train_voxel_m)
         self.cur_point_cloud_torch = self.cur_point_cloud_torch[idx]
         if self.cur_point_ts_torch is not None:
@@ -480,7 +485,7 @@ class SLAMDataset(Dataset):
         if self.cur_sem_labels_torch is not None:
             self.cur_point_cloud_torch, self.cur_sem_labels_torch = filter_sem_kitti(self.cur_point_cloud_torch, self.cur_sem_labels_torch, self.cur_sem_labels_full,
                                                                                      True, self.config.filter_moving_object) 
-        else:
+        else: # crop inside the boundary
             self.cur_point_cloud_torch, self.cur_point_ts_torch = crop_frame(self.cur_point_cloud_torch, self.cur_point_ts_torch, 
                                                                              self.config.min_z, self.config.max_z, 
                                                                              self.config.min_range, crop_max_range)
@@ -624,7 +629,7 @@ class SLAMDataset(Dataset):
 
             # --- pose initial guess tensor
             self.cur_pose_guess_torch = torch.tensor(cur_pose_init_guess, dtype=torch.float64, device=self.device)   
-            cur_source_torch = self.cur_point_cloud_torch.clone() # used for registration
+            cur_source_torch = self.cur_point_cloud_torch.clone() 
             
             # source point voxel downsampling (for registration)
             idx = voxel_down_sample_torch(cur_source_torch[:,:3], source_voxel_m)
@@ -678,10 +683,13 @@ class SLAMDataset(Dataset):
                 else:
                     lidar_last_ts = self.ts_pc[frame_id-1]
                     lidar_cur_ts = self.ts_pc[frame_id]
+                # for registration
+                self.pre_deskewing_points_reg = self.cur_source_points.clone() # downsampled twice, for registration
                 self.cur_source_points = deskewing_IMU(self.cur_source_points, cur_source_ts, self.ts_raw_imu_curinterval[1:], T_Lcur_Limu_deskewing, np.linalg.inv(T_Llast_Lcur), lidar_last_ts, lidar_cur_ts)
-                # test
-                # self.cur_point_cloud_torch = self.cur_source_points.clone()
+                # test & mapping & final visualization
+                self.pre_deskewing_points = self.cur_point_cloud_torch.clone() # downsampled once 
                 self.cur_point_cloud_torch = deskewing_IMU(self.cur_point_cloud_torch, self.cur_point_ts_torch, self.ts_raw_imu_curinterval[1:], T_Lcur_Limu_deskewing, np.linalg.inv(T_Llast_Lcur), lidar_last_ts, lidar_cur_ts)
+                self.post_deskewing_points = self.cur_point_cloud_torch.clone()
             # print("# Source point for registeration : ", cur_source_torch.shape[0])
     
         T4 = get_time()

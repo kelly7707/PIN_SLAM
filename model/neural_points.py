@@ -40,7 +40,7 @@ class NeuralPoints(nn.Module):
             self.position_encoder_geo = PositionalEncoder(config) 
             self.position_encoder_color = PositionalEncoder(config)
 
-        self.mean_grid_sampling = False # NOTE: sample the gravity center of the points inside the voxel or keep the point that is closest to the voxel center
+        self.mean_grid_sampling = False #? NOTE: sample the gravity center of the points inside the voxel or keep the point that is closest to the voxel center
 
         self.device = config.device
         self.dtype = config.dtype
@@ -89,13 +89,13 @@ class NeuralPoints(nn.Module):
         self.local_point_orientations = torch.empty((0, 4), dtype=self.dtype, device=self.device) # as quaternion
         self.local_geo_features = nn.Parameter() # learnable parameters, will be optimized during training.
         self.local_color_features = nn.Parameter()  
-        self.local_point_certainties = torch.empty((0), dtype=self.dtype, device=self.device)
+        self.local_point_certainties = torch.empty((0), dtype=self.dtype, device=self.device) #?
         self.local_point_ts_update = torch.empty((0), device=self.device, dtype=torch.long)
         self.local_mask = None
         self.global2local = None
 
         # set neighborhood search region
-        self.set_search_neighborhood(num_nei_cells=config.num_nei_cells, search_alpha=config.search_alpha)
+        self.set_search_neighborhood(num_nei_cells=config.num_nei_cells, search_alpha=config.search_alpha) # default 2 ; 0.2
 
         self.memory_footprint = []
 
@@ -255,7 +255,7 @@ class NeuralPoints(nn.Module):
         self.point_ts_create = torch.cat((self.point_ts_create, new_points_ts), 0)
         self.point_ts_update = torch.cat((self.point_ts_update, new_points_ts), 0)  
         
-        # with padding in the end
+        # feature initialization (with padding in the end)
         new_fts = self.geo_feature_std*torch.randn(new_point_count+1, self.geo_feature_dim, device=self.device, dtype=self.dtype)
         self.geo_features = torch.cat((self.geo_features[:-1], new_fts),0)
 
@@ -283,7 +283,7 @@ class NeuralPoints(nn.Module):
         else:
             point_ts_used = self.point_ts_create
 
-        if use_travel_dist:
+        if use_travel_dist: # select the points within certain travel distance
             delta_travel_dist = torch.abs(self.travel_dist[cur_ts] - self.travel_dist[point_ts_used])
             local_mask = (dist2sensor < self.local_map_radius**2) & (delta_travel_dist < self.diff_travel_dist_local)
         else: # use delta_t
@@ -433,7 +433,7 @@ class NeuralPoints(nn.Module):
                           device=self.primes.device, dtype=self.primes.dtype)
 
         coords = torch.meshgrid(dx, dx, dx, indexing="ij")
-        dx = torch.stack(coords, dim=-1).reshape(-1, 3) # [K,3]
+        dx = torch.stack(coords, dim=-1).reshape(-1, 3) # [K,3] # K= num_dx^3
 
         dx2 = torch.sum(dx**2, dim=-1)
         self.neighbor_dx = dx[dx2<(num_nei_cells+search_alpha)**2] # in the sphere --> smaller K --> faster training
@@ -454,7 +454,7 @@ class NeuralPoints(nn.Module):
 
         # print(self.neighbor_K)
 
-        self.max_valid_dist2 = 3*((num_nei_cells+1)*self.resolution)**2
+        self.max_valid_dist2 = 3*((num_nei_cells+1)*self.resolution)**2 #?
 
     def radius_neighborhood_search(self, points: torch.Tensor, time_filtering: bool = False):
                                         
@@ -473,7 +473,7 @@ class NeuralPoints(nn.Module):
 
         T12 = get_time()
 
-        neighb_idx = self.buffer_pt_index[hash]
+        neighb_idx = self.buffer_pt_index[hash] # [N,K]
 
         T2 = get_time()
 
@@ -537,7 +537,7 @@ class NeuralPoints(nn.Module):
         geo_features_vector = None
         color_features_vector = None
 
-        nn_k = self.config.query_nn_k
+        nn_k = self.config.query_nn_k  # ~=6
 
         T0 = get_time()
 
@@ -559,7 +559,7 @@ class NeuralPoints(nn.Module):
         T1 = get_time()
         
         dists2[idx==-1] = 9e3 # invalid, set to large distance
-        sorted_dist2, sorted_neigh_idx = torch.sort(dists2, dim=1) # sort according to distance
+        sorted_dist2, sorted_neigh_idx = torch.sort(dists2, dim=1) # sort according to distance (for neighbors of each query point)
         sorted_idx = idx.gather(1, sorted_neigh_idx)
         dists2 = sorted_dist2[:,:nn_k] # only take the knn
         idx = sorted_idx[:,:nn_k] # sorted local idx, only take the knn            
