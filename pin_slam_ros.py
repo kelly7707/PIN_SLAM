@@ -33,6 +33,7 @@ from utils.tracker import Tracker
 from utils.mapper import Mapper
 from model.neural_points import NeuralPoints
 from model.decoder import Decoder
+from model.attention import Attention
 from dataset.slam_dataset import SLAMDataset, find_closest_timestamp_index
 
 # TODO:
@@ -62,10 +63,16 @@ class PINSLAMer:
         self.ts_field_name = ts_field_name
         
         # initialize the mlp decoder
-        self.geo_mlp = Decoder(self.config, self.config.geo_mlp_hidden_dim, self.config.geo_mlp_level, 1)
-        self.sem_mlp = Decoder(self.config, self.config.sem_mlp_hidden_dim, self.config.sem_mlp_level, self.config.sem_class_count + 1) if self.config.semantic_on else None
-        self.color_mlp = Decoder(self.config, self.config.color_mlp_hidden_dim, self.config.color_mlp_level, self.config.color_channel) if self.config.color_on else None
+        if self.config.attention_mode:
+            self.geo_mlp = Attention(self.config, self.config.geo_mlp_hidden_dim, self.config.geo_mlp_level, 1)
+            self.sem_mlp = None
+            self.color_mlp = None
+        else:
+            self.geo_mlp = Decoder(self.config, self.config.geo_mlp_hidden_dim, self.config.geo_mlp_level, 1)
+            self.sem_mlp = Decoder(self.config, self.config.sem_mlp_hidden_dim, self.config.sem_mlp_level, self.config.sem_class_count + 1) if self.config.semantic_on else None
+            self.color_mlp = Decoder(self.config, self.config.color_mlp_hidden_dim, self.config.color_mlp_level, self.config.color_channel) if self.config.color_on else None
 
+        
         # initialize the feature octree
         self.neural_points = NeuralPoints(self.config)
 

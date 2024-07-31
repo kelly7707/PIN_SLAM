@@ -26,9 +26,11 @@ from model.decoder import Decoder
 
 class Mapper():
 
+    # def __init__(self, config: Config, dataset: SLAMDataset, neural_points: NeuralPoints, 
+    #              geo_mlp: Decoder, sem_mlp: Decoder, color_mlp: Decoder):
     def __init__(self, config: Config, dataset: SLAMDataset, neural_points: NeuralPoints, 
-                 geo_mlp: Decoder, sem_mlp: Decoder, color_mlp: Decoder):
-        
+                 geo_mlp, sem_mlp, color_mlp):
+            
         self.config = config
 
         self.silence = config.silence
@@ -286,7 +288,7 @@ class Mapper():
             cur_sample_certainty = torch.zeros(cur_sample_filtered_count, device = self.device)
             cur_label_filtered = self.sdf_label_pool[-self.cur_sample_count:]
 
-            self.neural_points.set_search_neighborhood(num_nei_cells=1, search_alpha=0.)
+            self.neural_points.set_search_neighborhood(num_nei_cells=1, search_alpha=0.) # for query_certainty
             for n in range(iter_n):
                 head = n*bs
                 tail = min((n+1)*bs, cur_sample_filtered_count)
@@ -295,7 +297,7 @@ class Mapper():
                 cur_sample_certainty[head:tail] = batch_certainty
 
             # dirty fix
-            self.neural_points.set_search_neighborhood(num_nei_cells=self.config.num_nei_cells, search_alpha=self.config.search_alpha)
+            self.neural_points.set_search_neighborhood(num_nei_cells=self.config.num_nei_cells, search_alpha=self.config.search_alpha) # set self.neighbor_dx
 
             # cur_sample_certainty = self.neural_points.query_certainty() 
             # self.new_idx = torch.where(cur_sample_certainty < self.config.new_certainty_thre)[0] # both the surface and freespace new samples
@@ -464,7 +466,7 @@ class Mapper():
             if self.require_gradient: #default false
                 coord.requires_grad_(True)
 
-            geo_feature, color_feature, weight_knn, _, certainty = self.neural_points.query_feature(coord, ts, query_color_feature=self.config.color_on)
+            geo_feature, color_feature, weight_knn, _, certainty = self.neural_points.query_feature(coord, ts, query_color_feature=self.config.color_on) # query feature of neighbors
             
             T02 = get_time()
             # predict the scaled sdf with the feature

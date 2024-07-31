@@ -18,8 +18,8 @@ from model.decoder import Decoder
 
 class Tracker():
 
-    def __init__(self, config: Config, neural_points: NeuralPoints, geo_decoder: Decoder, sem_decoder: Decoder, color_decoder: Decoder):
-    
+    # def __init__(self, config: Config, neural_points: NeuralPoints, geo_decoder: Decoder, sem_decoder: Decoder, color_decoder: Decoder):
+    def __init__(self, config: Config, neural_points: NeuralPoints, geo_decoder, sem_decoder, color_decoder):
         self.config = config
 
         self.silence = config.silence

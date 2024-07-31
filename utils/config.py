@@ -179,6 +179,10 @@ class Config:
 
         self.stop_frame_thre: int = 20 # 20, determine if the robot is stopped when there's almost no motion in a time peroid
 
+        # training mode
+        self.decoder_origin: bool = True
+        self.attention_mode: bool = False
+        
         # decoder
         self.mlp_bias_on: bool = True
         
@@ -433,6 +437,10 @@ class Config:
 
             self.local_map_travel_dist_ratio = config_args["neuralpoints"].get("local_map_travel_dist_ratio", self.local_map_travel_dist_ratio)
 
+        # training mode
+        if "training" in config_args:
+            self.attention_mode = config_args["training"].get("attention_mode", self.attention_mode)
+        
         # decoder
         if "decoder" in config_args: # only on if indicated
             # number of the level of the mlp decoder
