@@ -17,10 +17,15 @@ sampler:
   free_sample_end_dist_m: 1.0
   free_front_sample_n: 2
 neuralpoints:
+  weighted_first: False
   voxel_size_m: 0.4 #resolution
   feature_dim: 8 
   query_nn_k: 6
   search_alpha: 0.5 # increase when you want to be more robust to agressive motions
+training:
+  attention_mode: True
+decoder:
+  mlp_hidden_dim: 32
 loss:
   main_loss_type: bce
   loss_weight_on: True
@@ -43,7 +48,7 @@ optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 10000
 eval:
-  wandb_vis_on: False # log to wandb or not
+  wandb_vis_on: True # log to wandb or not
   silence_log: False
   save_map: True
   save_mesh: True
