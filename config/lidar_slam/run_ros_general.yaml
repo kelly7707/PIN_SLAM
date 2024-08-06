@@ -43,7 +43,7 @@ optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 10000
 eval:
-  wandb_vis_on: False # log to wandb or not
+  wandb_vis_on: True # log to wandb or not
   silence_log: False
   save_map: True
   save_mesh: True
