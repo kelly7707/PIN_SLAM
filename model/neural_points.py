@@ -88,6 +88,7 @@ class NeuralPoints(nn.Module):
         self.local_neural_points = torch.empty((0, 3), dtype=self.dtype, device=self.device)
         self.local_point_orientations = torch.empty((0, 4), dtype=self.dtype, device=self.device) # as quaternion
         self.local_geo_features = nn.Parameter() # learnable parameters, will be optimized during training.
+        # self.local_geo_features_query = nn.Parameter()
         self.local_color_features = nn.Parameter()  
         self.local_point_certainties = torch.empty((0), dtype=self.dtype, device=self.device) #?
         self.local_point_ts_update = torch.empty((0), device=self.device, dtype=torch.long)
@@ -211,7 +212,7 @@ class NeuralPoints(nn.Module):
         sample_idx = voxel_down_sample_torch(points, cur_resolution) # take the point that is the closest to the voxel center (now used)
         sample_points = points[sample_idx]
 
-        grid_coords = (sample_points / cur_resolution).floor().to(self.primes)
+        grid_coords = (sample_points / cur_resolution).floor().to(self.primes) # grid_coords != sample_points
         buffer_size = int(self.buffer_size)
         hash = torch.fmod((grid_coords * self.primes).sum(-1), buffer_size)
         
@@ -244,7 +245,7 @@ class NeuralPoints(nn.Module):
         cur_pt_count = self.neural_points.shape[0]
         cur_pt_idx[update_mask] = torch.arange(new_point_count, dtype=self.idx_dtype, device=self.device) + cur_pt_count
         
-        self.buffer_pt_index[hash] = cur_pt_idx
+        self.buffer_pt_index[hash] = cur_pt_idx # hash -> index (the index num of each point (count from 0))
         self.neural_points = torch.cat((self.neural_points, added_pt), 0)
 
         added_orientations = [[1, 0, 0, 0]] * new_point_count
@@ -306,7 +307,9 @@ class NeuralPoints(nn.Module):
 
         self.global2local = global2local 
         
+        assert self.geo_features.shape[0] == local_mask.shape[0]
         self.local_geo_features = nn.Parameter(self.geo_features[local_mask])
+               
         if self.color_features is not None:
             self.local_color_features = nn.Parameter(self.color_features[local_mask])
 
@@ -318,6 +321,7 @@ class NeuralPoints(nn.Module):
         self.neural_points[local_mask[:-1]] = self.local_neural_points
         self.point_orientations[local_mask[:-1]] = self.local_point_orientations
         self.geo_features[local_mask] = self.local_geo_features.data
+        # self.geo_features_query[local_mask] = self.local_geo_features_query.data
         if self.color_features is not None:
             self.color_features[local_mask] = self.local_color_features.data
         self.point_certainties[local_mask[:-1]] = self.local_point_certainties
@@ -464,7 +468,7 @@ class NeuralPoints(nn.Module):
 
         grid_coords = (points / cur_resolution).floor().to(self.primes) # [N,3]
         
-        neighbord_cells = grid_coords[..., None, :] + self.neighbor_dx # [N,K,3] # int64
+        neighbord_cells = grid_coords[..., None, :] + self.neighbor_dx # [N,K,3] # int64 # query_certainty - K=1(set_search_neighborhood), self.neighbor_dx = [0,0,0] ; 
 
         T1 = get_time()
     
@@ -489,8 +493,8 @@ class NeuralPoints(nn.Module):
 
         T3 = get_time()
 
-        neighb_pts = self.neural_points[neighb_idx]
-        neighb_pts_sub = neighb_pts - points.view(-1, 1, 3) # [N,K,3]
+        neighb_pts = self.neural_points[neighb_idx] # if num of current neural_points < neighb_idx: multiple points will query a same grid coord, and dim of neighb_pts = neighb_idx
+        neighb_pts_sub = neighb_pts - points.view(-1, 1, 3) # [N,K,3] coord - real coord
 
         dist2 = torch.sum(neighb_pts_sub**2, dim=-1)
         dist2[neighb_idx==-1]=self.max_valid_dist2
@@ -581,6 +585,7 @@ class NeuralPoints(nn.Module):
                 geo_features[valid_mask] = self.geo_features[idx[valid_mask]]
             if self.config.layer_norm_on:
                 geo_features = F.layer_norm(geo_features, [self.geo_feature_dim])
+
         if query_color_feature and self.color_features is not None:
             color_features = torch.zeros(batch_size, nn_k, self.color_feature_dim, device=self.device, dtype=self.dtype) # [N, K, F] 
             if query_locally:
@@ -612,6 +617,7 @@ class NeuralPoints(nn.Module):
 
         if query_geo_feature:
             geo_features_vector = torch.cat((geo_features, neighb_vector), dim=2) # [N, K, F+P]
+            
         if query_color_feature and self.color_features is not None:
             color_features_vector = torch.cat((color_features, neighb_vector), dim=2) # [N, K, F+P]
 
@@ -680,6 +686,7 @@ class NeuralPoints(nn.Module):
         self.local_neural_points = None
         self.local_point_orientations = None
         self.local_geo_features = nn.Parameter()
+
         self.local_color_features = nn.Parameter() 
         self.local_point_certainties = None
         self.local_point_ts_update = None

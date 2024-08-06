@@ -105,7 +105,8 @@ class Mesher():
                     batch_sdf[pred_mask] = self.geo_decoder.sdf(batch_geo_feature[pred_mask]) 
                    
                     if not self.config.weighted_first:
-                        batch_sdf = torch.sum(batch_sdf * weight_knn, dim=1).squeeze(1)
+                        # batch_sdf = torch.sum(batch_sdf * weight_knn, dim=1).squeeze(1)
+                        batch_sdf = batch_sdf.squeeze(1)
                     if out_torch:
                         sdf_pred[head:tail] = batch_sdf.detach()
                     else: 

@@ -90,7 +90,8 @@ class Mapper():
 
         sdf_pred = self.geo_mlp.sdf(geo_feature) # predict the scaled sdf with the feature # [N, K, 1]
         if not self.config.weighted_first:
-            sdf_pred = torch.sum(sdf_pred * weight_knn, dim=1).squeeze(1) # N
+            # sdf_pred = torch.sum(sdf_pred * weight_knn, dim=1).squeeze(1) # N
+            sdf_pred = sdf_pred.squeeze(1)
         if type_2_on:
             sdf_grad = get_gradient(points_torch, sdf_pred).detach() # use analytical gradient here
             grad_norm = sdf_grad.norm(dim=-1, keepdim=True).squeeze()
@@ -288,7 +289,7 @@ class Mapper():
             cur_sample_certainty = torch.zeros(cur_sample_filtered_count, device = self.device)
             cur_label_filtered = self.sdf_label_pool[-self.cur_sample_count:]
 
-            self.neural_points.set_search_neighborhood(num_nei_cells=1, search_alpha=0.) # for query_certainty
+            self.neural_points.set_search_neighborhood(num_nei_cells=1, search_alpha=0.) # for query_certainty, K =1
             for n in range(iter_n):
                 head = n*bs
                 tail = min((n+1)*bs, cur_sample_filtered_count)
@@ -471,9 +472,10 @@ class Mapper():
             T02 = get_time()
             # predict the scaled sdf with the feature
 
-            sdf_pred = self.geo_mlp.sdf(geo_feature) # predict the scaled sdf with the feature # [N, K, 1]
+            sdf_pred = self.geo_mlp.sdf(geo_feature, coord) # predict the scaled sdf with the feature # [N, K, 1]
             if not self.config.weighted_first:
-                sdf_pred = torch.sum(sdf_pred * weight_knn, dim=1).squeeze(1) # N
+                # sdf_pred = torch.sum(sdf_pred * weight_knn, dim=1).squeeze(1) # N
+                sdf_pred = sdf_pred.squeeze(1)
 
             if self.config.semantic_on:
                 sem_pred = self.sem_mlp.sem_label_prob(geo_feature)
@@ -678,14 +680,15 @@ class Mapper():
     # short-hand function
     def sdf(self, x, get_std = False):
         geo_feature, _, weight_knn, _, _ = self.neural_points.query_feature(x)
-        sdf_pred = self.geo_mlp.sdf(geo_feature) # predict the scaled sdf with the feature # [N, K, 1]
+        sdf_pred = self.geo_mlp.sdf(geo_feature, x) # predict the scaled sdf with the feature # [N, K, 1]
         sdf_std = None
         if not self.config.weighted_first:
-            sdf_pred_mean = torch.sum(sdf_pred * weight_knn, dim=1) # N
-            if get_std:
-                sdf_var = torch.sum((weight_knn * (sdf_pred - sdf_pred_mean.unsqueeze(-1))**2), dim=1) 
-                sdf_std = torch.sqrt(sdf_var).squeeze(1)
-            sdf_pred = sdf_pred_mean.squeeze(1)
+            # sdf_pred_mean = torch.sum(sdf_pred * weight_knn, dim=1) # N
+            # if get_std:
+            #     sdf_var = torch.sum((weight_knn * (sdf_pred - sdf_pred_mean.unsqueeze(-1))**2), dim=1) 
+            #     sdf_std = torch.sqrt(sdf_var).squeeze(1)
+            # sdf_pred = sdf_pred_mean.squeeze(1)
+            sdf_pred = sdf_pred.squeeze(1)
         return sdf_pred, sdf_std
 
     def get_numerical_gradient(self, x, sdf_x = None, eps = 0.02, two_side = True):

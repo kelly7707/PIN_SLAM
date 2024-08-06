@@ -228,7 +228,7 @@ class Tracker():
             tail = min((n+1)*bs, sample_count)
             batch_coord = coord[head:tail, :]
             if query_sdf_grad or query_color_grad:
-                batch_coord.requires_grad_(True)
+                batch_coord.requires_grad_(True) #tracking default
 
             batch_geo_feature, batch_color_feature, weight_knn, nn_count, batch_certainty = self.neural_points.query_feature(batch_coord, 
                                                                                                                  training_mode=False, 
@@ -237,16 +237,19 @@ class Tracker():
             
             # print(weight_knn)
             if query_sdf:
-                batch_sdf = self.geo_decoder.sdf(batch_geo_feature)
+                batch_sdf = self.geo_decoder.sdf(batch_geo_feature, batch_coord)
                 if not self.config.weighted_first: 
-                    # batch_sdf = torch.sum(batch_sdf * weight_knn, dim=1).squeeze(1) 
-                    # print(batch_sdf.squeeze(-1))
+                    # # batch_sdf = torch.sum(batch_sdf * weight_knn, dim=1).squeeze(1) 
+                    # # print(batch_sdf.squeeze(-1))
 
-                    batch_sdf_mean = torch.sum(batch_sdf * weight_knn, dim=1) # N, 1
-                    batch_sdf_var = torch.sum((weight_knn * (batch_sdf - batch_sdf_mean.unsqueeze(-1))**2), dim=1) 
-                    batch_sdf_std = torch.sqrt(batch_sdf_var).squeeze(1)
-                    batch_sdf = batch_sdf_mean.squeeze(1)
-                    sdf_std[head:tail] = batch_sdf_std.detach() # the std is a bit too large, figure out why
+                    # batch_sdf_mean = torch.sum(batch_sdf * weight_knn, dim=1) # N, 1
+                    # batch_sdf_var = torch.sum((weight_knn * (batch_sdf - batch_sdf_mean.unsqueeze(-1))**2), dim=1) 
+                    # batch_sdf_std = torch.sqrt(batch_sdf_var).squeeze(1)
+                    # batch_sdf = batch_sdf_mean.squeeze(1)
+                    # sdf_std[head:tail] = batch_sdf_std.detach() # the std is a bit too large, figure out why
+                    
+                    batch_sdf = batch_sdf.squeeze(1)
+                    # sdf_std[head:tail] = 0  #TODO: could not be used
 
                 if query_sdf_grad:
                     batch_sdf_grad = get_gradient(batch_coord, batch_sdf) # use analytical gradient in tracking
@@ -309,6 +312,7 @@ class Tracker():
 
         if valid_point_count < 10:
             T = torch.eye(4, device=points.device, dtype=torch.float64)
+            print("[bold yellow](Warning)valid_point_count < 10 [/bold yellow]")
             return T, None, None, None, valid_points, 0.0, 0.0
         if vis_weight_pc:
             invalid_points = points[~valid_idx]
@@ -467,7 +471,7 @@ def ct_registration_step(self, points: torch.Tensor, ts: torch.Tensor, normals: 
 # function adapted from LocNDF by Louis Wiesmann
 def implicit_reg(points, sdf_grad, sdf_residual, weight, lm_lambda = 0., require_cov=False, require_eigen=False):
 
-    cross = torch.cross(points, sdf_grad) # N,3 x N,3
+    cross = torch.cross(points, sdf_grad) # N,3 x N,3 TODO:check
     J = torch.cat([cross, sdf_grad], -1) # first rotation, then translation # N, 6
 
     N = J.T @ (weight*J) # approximate Hessian matrix # first rot, then tran # 6, 6

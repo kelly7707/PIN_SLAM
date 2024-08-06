@@ -32,6 +32,7 @@ class Attention(nn.Module):
             
         feature_dim = config.feature_dim # 8
         input_layer_count = feature_dim + position_dim # 8+3
+        query_input_layer_dim = position_dim # 3
         
         if is_time_conditioned:
             input_layer_count += 1
@@ -50,57 +51,34 @@ class Attention(nn.Module):
                 shared_layers.extend([
                     nn.Linear(hidden_dim, hidden_dim, bias_on),
                     nn.ReLU(inplace=True)
-                ])
+                ]) #TODO: different hidden_dim
         self.shared_layers = nn.Sequential(*shared_layers)
 
         # Separate linear layers for value, key, and query
         self.value_layer = nn.Linear(hidden_dim, hidden_dim, bias_on)
         self.key_layer = nn.Linear(hidden_dim, hidden_dim, bias_on)
-        self.query_layer = nn.Linear(hidden_dim, hidden_dim, bias_on)
 
-        # v_layers = []
-        # for i in range(hidden_level):
-        #     if i == 0:
-        #         # layers.append(nn.Linear(input_layer_count, hidden_dim, bias_on)) # 11, 64
-        #         v_layers.extend([
-        #             nn.Linear(input_layer_count, hidden_dim, bias_on),
-        #             nn.ReLU(inplace=True)
-        #         ])
-        #     else:
-        #         # layers.append(nn.Linear(hidden_dim, hidden_dim, bias_on))
-        #         v_layers.extend([
-        #             nn.Linear(hidden_dim, hidden_dim, bias_on),
-        #             nn.ReLU(inplace=True)
-        #         ]) #TODO: different hidden_dim
-        
-        # k_layers = []
-        # for i in range(hidden_level):
-        #     if i == 0:
-        #         k_layers.extend([
-        #             nn.Linear(input_layer_count, hidden_dim, bias_on),
-        #             nn.ReLU(inplace=True)
-        #         ])
-        #     # TODO: multiple layers
-
-        # q_layers = []
-        # for i in range(hidden_level):
-        #     if i == 0:
-        #         q_layers.extend([
-        #             nn.Linear(input_layer_count, hidden_dim, bias_on),
-        #             nn.ReLU(inplace=True)
-        #         ])
-        #     # TODO: multiple layers
+        q_layers = []
+        q_hiddenlayer_dim = 11
+        for i in range(hidden_level):
+            if i == 0:
+                q_layers.extend([
+                    nn.Linear(query_input_layer_dim, hidden_dim, bias_on),
+                    nn.ReLU(inplace=True),
+                    # nn.Linear(input_layer_count, hidden_dim, bias_on),
+                    # nn.ReLU(inplace=True)
+                ])
+            # TODO: multiple layers
             
         # # self.layers = nn.ModuleList(layers) # hidden_level = 1 (11, 64)
-        # self.v_layers = nn.ModuleList(v_layers)
-        # self.k_layers = nn.ModuleList(k_layers)
-        # self.q_layers = nn.ModuleList(q_layers)
+        # self.query_layer = nn.ModuleList(q_layers)
+        self.query_layer = nn.Sequential(*q_layers)
 
 
         # multihead attention
         embed_dim = hidden_dim
         num_heads = 1 # TODO: config & multiple heads
-        self.multihead_attn = nn.MultiheadAttention(embed_dim, num_heads)
+        self.multihead_attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True)
         
         
         # output layer
@@ -114,20 +92,21 @@ class Attention(nn.Module):
         self.to(config.device)
         # torch.cuda.empty_cache()
 
-    def forward(self, feature):
+    def forward(self, feature, query_features=None):
         # If we use BCEwithLogits loss, do not need to do sigmoid mannually
-        output = self.sdf(feature)
+        output = self.sdf(feature, query_features)
         return output
 
     # predict the sdf (opposite sign to the actual sdf)
     # unit is already m
-    def sdf(self, features):
-        
+    def sdf(self, features, query_features=None):
+        assert features.shape[0] == query_features.shape[0]
         shared_output = self.shared_layers(features)
 
         value = self.value_layer(shared_output)
         key = self.key_layer(shared_output)
-        query = self.query_layer(shared_output)
+
+        query = self.query_layer(query_features.clone().detach()).unsqueeze(1)
         
         attn_output = self.multihead_attn(query, key, value, need_weights=False) # ignore attn_output_weights
 
