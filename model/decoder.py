@@ -106,7 +106,7 @@ class Decoder(nn.Module):
                 h = F.relu(l(h))
 
         out = self.lout(h).squeeze(1)
-        out *= self.sdf_scale
+        out *= self.sdf_scale #0.55*0.05
         # linear (feature_dim + 1 -> hidden_dim)
         # relu
         # linear (hidden_dim -> hidden_dim)

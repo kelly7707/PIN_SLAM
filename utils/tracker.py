@@ -228,7 +228,8 @@ class Tracker():
             tail = min((n+1)*bs, sample_count)
             batch_coord = coord[head:tail, :]
             if query_sdf_grad or query_color_grad:
-                batch_coord.requires_grad_(True) #tracking default
+                # TODO: uncomment this line in original code to check if it's necessary
+                batch_coord.requires_grad_(True) #tracking default # I think it's not necessary? cause we get the batch_sdf_grad directly with get_gradient (analytical gradient)
 
             batch_geo_feature, batch_color_feature, weight_knn, nn_count, batch_certainty = self.neural_points.query_feature(batch_coord, 
                                                                                                                  training_mode=False, 

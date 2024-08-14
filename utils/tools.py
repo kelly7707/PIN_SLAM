@@ -66,7 +66,10 @@ def setup_experiment(config: Config, argv = None, debug_mode: bool = False):
             # set up wandb
             setup_wandb()
             wandb.init(project="pin-slam", config=vars(config), dir=run_path) # your own worksapce
-            wandb.run.name = run_name         
+            wandb.run.name = run_name   
+            # Set a description for the run
+            wandb.run.notes = "**800** warm-up; 3 coord query -> 32, 11 geo feature -> 32 (layernorm+relu); MHA(kv_bias_on +**dropout-0.2**); decoder(32->1)| LiDAR + IMU, PGO"
+      
 
         # config file and reproducable shell script
         if argv is not None:
@@ -188,12 +191,14 @@ def get_gradient(inputs, outputs):
 
 def freeze_model(model: nn.Module):
     for child in model.children():
+        child.eval()
         for param in child.parameters():
             param.requires_grad = False
 
 
 def unfreeze_model(model: nn.Module):
     for child in model.children():
+        child.train()
         for param in child.parameters():
             param.requires_grad = True
 

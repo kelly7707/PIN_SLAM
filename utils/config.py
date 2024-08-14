@@ -92,7 +92,7 @@ class Config:
         # neural points
         self.weighted_first: bool = True # weighted the neighborhood feature before decoding to sdf or do the weighting of the decoded sdf afterwards
 
-        self.layer_norm_on: bool = True #False # apply layer norm to the features
+        self.layer_norm_on: bool = False # apply layer norm to the features
 
         self.voxel_size_m: float = 0.3 # we use the voxel hashing structure to maintain the neural points, the voxel size is set as this value
         self.max_points_per_voxel: int = 1 # we keep the maximum this number of neural feature points in each voxel

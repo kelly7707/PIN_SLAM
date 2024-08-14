@@ -37,52 +37,73 @@ class Attention(nn.Module):
         if is_time_conditioned:
             input_layer_count += 1
 
-        # predict V/K/Q, assume they have the same output dim N (hidden_dim)
-        # Initializa the structure of shared MLP
-        # Shared MLP layers
+        # ---- predict V/K/Q, assume they have the same output dim N (hidden_dim)
+        # -- Shared MLP layers
         shared_layers = []
+        qv_dim = hidden_dim #hidden_dim
         for i in range(hidden_level):
             if i == 0:
                 shared_layers.extend([
-                    nn.Linear(input_layer_count, hidden_dim, bias_on),
+                    nn.Linear(input_layer_count, qv_dim, bias_on),
+                    nn.LayerNorm(qv_dim), # LN1
                     nn.ReLU(inplace=True)
                 ])
             else:
                 shared_layers.extend([
                     nn.Linear(hidden_dim, hidden_dim, bias_on),
+                    # nn.LayerNorm(hidden_dim), 
                     nn.ReLU(inplace=True)
                 ]) #TODO: different hidden_dim
         self.shared_layers = nn.Sequential(*shared_layers)
 
         # Separate linear layers for value, key, and query
-        self.value_layer = nn.Linear(hidden_dim, hidden_dim, bias_on)
-        self.key_layer = nn.Linear(hidden_dim, hidden_dim, bias_on)
+        self.value_layer = nn.Linear(qv_dim, qv_dim, bias_on) #hidden_dim
+        self.key_layer = nn.Linear(qv_dim, qv_dim, bias_on)
 
+        # self.value_layer = nn.Sequential(
+        #     nn.Linear(qv_dim, qv_dim, bias_on),
+        #     nn.LayerNorm(qv_dim), # LN2
+        #     nn.ReLU(inplace=True)
+        #     # nn.Tanh()
+        # )
+        # self.key_layer = nn.Sequential(
+        #     nn.Linear(qv_dim, qv_dim, bias_on),
+        #     nn.LayerNorm(qv_dim), # LN3
+        #     nn.ReLU(inplace=True)
+        #     # nn.Tanh()
+        # )
+
+        # -- Query MLP layers
         q_layers = []
-        q_hiddenlayer_dim = 11
+        q_dim = 11
         for i in range(hidden_level):
             if i == 0:
                 q_layers.extend([
                     nn.Linear(query_input_layer_dim, hidden_dim, bias_on),
+                    nn.LayerNorm(hidden_dim), # LN4
                     nn.ReLU(inplace=True),
                     # nn.Linear(input_layer_count, hidden_dim, bias_on),
                     # nn.ReLU(inplace=True)
                 ])
             # TODO: multiple layers
             
+        self.query_layer = nn.Sequential(*q_layers)
         # # self.layers = nn.ModuleList(layers) # hidden_level = 1 (11, 64)
         # self.query_layer = nn.ModuleList(q_layers)
-        self.query_layer = nn.Sequential(*q_layers)
 
 
-        # multihead attention
-        embed_dim = hidden_dim
-        num_heads = 1 # TODO: config & multiple heads
-        self.multihead_attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True)
+        # -- MHA
+        embed_dim = hidden_dim # q_hiddenlayer_dim # hidden_dim
+        num_heads = 1 #4 # TODO: config & multiple heads
+        self.multihead_attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True, kdim=qv_dim, vdim=qv_dim, add_bias_kv=True,dropout=0.2)
         
-        
-        # output layer
-        self.lout = nn.Linear(hidden_dim, out_dim, bias_on) # (64, 1)
+        # LayerNorm after multihead attention
+        self.attn_norm = nn.LayerNorm(embed_dim, elementwise_affine=False) # TODO LN5
+        # TODO: relu
+
+
+        # -- output layer
+        self.lout = nn.Linear(embed_dim, out_dim, bias_on) # (64, 1)
 
         if config.main_loss_type == 'bce': # default
             self.sdf_scale = config.logistic_gaussian_ratio*config.sigma_sigmoid_m
@@ -101,14 +122,22 @@ class Attention(nn.Module):
     # unit is already m
     def sdf(self, features, query_features=None):
         assert features.shape[0] == query_features.shape[0]
-        shared_output = self.shared_layers(features)
+        # query_features = F.layer_norm(query_features, [query_features.shape[1]])
 
+        shared_output = self.shared_layers(features)
         value = self.value_layer(shared_output)
         key = self.key_layer(shared_output)
 
-        query = self.query_layer(query_features.clone().detach()).unsqueeze(1)
+        # value = self.value_layer(features)
+        # key = self.key_layer(features) #.clone().detach()
+
+        query = self.query_layer(query_features.detach()).unsqueeze(1)  #.clone().detach()
         
         attn_output = self.multihead_attn(query, key, value, need_weights=False) # ignore attn_output_weights
+
+        # # Apply LayerNorm after multihead attention
+        # attn_output = self.attn_norm(attn_output[0])
+        # out = self.lout(attn_output).squeeze(1)
 
         out = self.lout(attn_output[0]).squeeze(1)
         out *= self.sdf_scale
