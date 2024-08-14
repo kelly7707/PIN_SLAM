@@ -98,8 +98,8 @@ class Attention(nn.Module):
         self.multihead_attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True, kdim=qv_dim, vdim=qv_dim, add_bias_kv=True,dropout=0.2)
         
         # LayerNorm after multihead attention
-        self.attn_norm = nn.LayerNorm(embed_dim, elementwise_affine=False) # TODO LN5
-        # TODO: relu
+        # self.attn_norm = nn.LayerNorm(embed_dim, elementwise_affine=False) # TODO LN5
+        # # TODO: relu
 
 
         # -- output layer
@@ -131,7 +131,7 @@ class Attention(nn.Module):
         # value = self.value_layer(features)
         # key = self.key_layer(features) #.clone().detach()
 
-        query = self.query_layer(query_features.detach()).unsqueeze(1)  #.clone().detach()
+        query = self.query_layer(query_features.clone().detach()).unsqueeze(1)  #.clone().detach()
         
         attn_output = self.multihead_attn(query, key, value, need_weights=False) # ignore attn_output_weights
 

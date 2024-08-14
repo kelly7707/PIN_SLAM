@@ -360,11 +360,11 @@ class PINSLAMer:
         T5 = get_time()
 
         # for the first frame, we need more iterations to do the initialization (warm-up)
-        cur_iter_num = int(self.config.iters * self.config.init_iter_ratio * 4/3) if self.dataset.processed_frame == 0 else self.config.iters
+        cur_iter_num = int(self.config.iters * self.config.init_iter_ratio * 4/3) if self.dataset.processed_frame == 0 else self.config.iters # 15
         if self.config.adaptive_mode and self.dataset.stop_status:
             cur_iter_num = max(1, cur_iter_num-10)
         if self.dataset.processed_frame == self.config.freeze_after_frame: # freeze the decoder after certain frame (default 40)
-            freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config)
+            freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config) # iters of first frame + 15*40
         
         # conduct local bundle adjustment (with lower frequency)
         if self.config.ba_freq_frame > 0 and (self.dataset.processed_frame+1) % self.config.ba_freq_frame == 0:

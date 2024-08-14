@@ -433,6 +433,8 @@ class Mapper():
     # PIN map online training (mapping) given the fixed pose
     def mapping(self, iter_count): 
 
+        self.geo_mlp.train()
+        
         if self.train_less:
             iter_count = max(1, iter_count-5)
 

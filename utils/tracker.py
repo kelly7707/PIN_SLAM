@@ -41,6 +41,8 @@ class Tracker():
                  source_semantics=None, source_sdf=None, 
                  cur_ts = None, loop_reg: bool = False, vis_result: bool = False): 
 
+        self.geo_decoder.eval()
+        
         if init_pose is None:
             T = torch.eye(4, dtype=torch.float64, device=self.device)
         else:
@@ -228,8 +230,8 @@ class Tracker():
             tail = min((n+1)*bs, sample_count)
             batch_coord = coord[head:tail, :]
             if query_sdf_grad or query_color_grad:
-                # TODO: uncomment this line in original code to check if it's necessary
-                batch_coord.requires_grad_(True) #tracking default # I think it's not necessary? cause we get the batch_sdf_grad directly with get_gradient (analytical gradient)
+                # TODO: uncomment this line in original code to check if it's necessary -- it is necessary
+                batch_coord.requires_grad_(True) #tracking default # used within get_gradient (calculate analytical gradient (output wrt input), so requires_grad of input is needed)
 
             batch_geo_feature, batch_color_feature, weight_knn, nn_count, batch_certainty = self.neural_points.query_feature(batch_coord, 
                                                                                                                  training_mode=False, 
