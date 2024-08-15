@@ -665,11 +665,18 @@ class PINSLAMer:
 if __name__ == "__main__":
 
     config_path = rospy.get_param('~config_path', "./config/lidar_slam/run_ncd_128.yaml")
-    point_cloud_topic = rospy.get_param('~point_cloud_topic', "/os_cloud_node/points")
-    imu_topic = rospy.get_param('~imu_topic', "/os_cloud_node/imu")
-    ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
+    # # -- New college dataset
+    # point_cloud_topic = rospy.get_param('~point_cloud_topic', "/os_cloud_node/points")
+    # imu_topic = rospy.get_param('~imu_topic', "/os_cloud_node/imu")
+    # ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
 
-    bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
+    # bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
+    # # -- ASL
+    point_cloud_topic = rospy.get_param('~point_cloud_topic', "/ouster/points")
+    imu_topic = rospy.get_param('~imu_topic', "/ouster/imu")
+    ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
+    bag_path = 'data/ASL/field_s/2023-08-09-19-05-05-field_s.bag'
+    
     
     # If you would like to directly run the python script without including it in a ROS package
     # python pin_slam_ros_node.py [path_to_your_config_file] [point_cloud_topic]

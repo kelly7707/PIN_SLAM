@@ -68,7 +68,7 @@ def setup_experiment(config: Config, argv = None, debug_mode: bool = False):
             wandb.init(project="pin-slam", config=vars(config), dir=run_path) # your own worksapce
             wandb.run.name = run_name   
             # Set a description for the run
-            wandb.run.notes = "**800** warm-up; 3 coord query -> 32, 11 geo feature -> 32 (layernorm+relu); MHA(kv_bias_on +**dropout-0.2**); decoder(32->1)| LiDAR + IMU, PGO"
+            wandb.run.notes = "**asl field_s** 800 warm-up; 3 coord query -> 32, 11 geo feature -> 32 (layernorm+relu); MHA(kv_bias_on +dropout-0.2); decoder(32->1)| turn off dropout during inference | LiDAR + IMU, PGO"
       
 
         # config file and reproducable shell script
@@ -185,13 +185,14 @@ def get_gradient(inputs, outputs):
         create_graph=True,
         retain_graph=True,
         only_inputs=True,
-    )[0]
+    )[0] # pytorch 
     return points_grad
 
 
 def freeze_model(model: nn.Module):
+    # model.eval()
     for child in model.children():
-        child.eval()
+        # child.eval()
         for param in child.parameters():
             param.requires_grad = False
 

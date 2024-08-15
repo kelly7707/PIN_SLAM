@@ -25,7 +25,7 @@ neuralpoints:
 training:
   attention_mode: True
 decoder:
-  mlp_hidden_dim: 32
+  mlp_hidden_dim: 32 #64
 loss:
   main_loss_type: bce
   loss_weight_on: True
