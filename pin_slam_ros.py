@@ -340,14 +340,7 @@ class PINSLAMer:
                 self.pgm.add_combined_IMU_factor(self.dataset.processed_frame, self.dataset.processed_frame-1)
                 # --- optimization & update
                 self.pgm.optimize_pose_graph(self.dataset, self.dataset.processed_frame)
-                # --- update the neural points and poses
-                pose_diff_torch = torch.tensor(self.pgm.get_pose_diff(), device=self.config.device, dtype=self.config.dtype)
-                self.dataset.cur_pose_torch = torch.tensor(self.pgm.cur_pose, device=self.config.device, dtype=self.config.dtype)
-                self.neural_points.adjust_map(pose_diff_torch)
-                self.neural_points.recreate_hash(self.dataset.cur_pose_torch[:3,3], None, (not self.config.pgo_merge_map), self.config.rehash_with_time, cur_frame_id) # recreate hash from current time
-                self.mapper.transform_data_pool(pose_diff_torch) # transform global pool
-                self.dataset.update_poses_after_pgo(self.pgm.cur_pose, self.pgm.pgo_poses)
-
+                
         if self.config.pgo_on: 
             self.loop_corrected = self.detect_correct_loop()
 
@@ -486,7 +479,7 @@ class PINSLAMer:
 
         self.path_msg.poses.append(pose_msg)
 
-        if self.loop_corrected: # update traj after pgo
+        if self.loop_corrected or self.config.imu_pgo: # update traj after pgo
             self.path_msg.poses = []
             for cur_pose in self.dataset.pgo_poses:
                 cur_q = tf.transformations.quaternion_from_matrix(cur_pose)
