@@ -809,7 +809,7 @@ class SLAMDataset(Dataset):
         write_tum_format_poses(os.path.join(run_path, "odom_poses_"), odom_poses_out)
         write_traj_as_o3d(self.odom_poses, os.path.join(run_path, "odom_poses.ply"))
 
-        if self.config.pgo_on:
+        if self.config.pgo_on or self.config.imu_pgo:
             slam_poses_out = apply_kitti_format_calib(self.pgo_poses, self.calib['Tr'])
             write_kitti_format_poses(os.path.join(run_path, "slam_poses_"), slam_poses_out)
             write_tum_format_poses(os.path.join(run_path, "slam_poses_"), slam_poses_out)

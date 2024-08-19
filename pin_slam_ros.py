@@ -333,7 +333,7 @@ class PINSLAMer:
                 self.pgm.add_combined_IMU_factor(self.dataset.processed_frame, self.dataset.processed_frame-1)
                 # --- optimization & update
                 self.pgm.optimize_pose_graph(self.dataset, self.dataset.processed_frame)
-
+                
         if self.config.pgo_on: 
             self.loop_corrected = self.detect_correct_loop()
 
@@ -472,7 +472,7 @@ class PINSLAMer:
 
         self.path_msg.poses.append(pose_msg)
 
-        if self.loop_corrected: # update traj after pgo
+        if self.loop_corrected or self.config.imu_pgo: # update traj after pgo
             self.path_msg.poses = []
             for cur_pose in self.dataset.pgo_poses:
                 cur_q = tf.transformations.quaternion_from_matrix(cur_pose)
