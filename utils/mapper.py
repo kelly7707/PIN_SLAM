@@ -582,7 +582,20 @@ class Mapper():
 
             opt.zero_grad(set_to_none=True)
             cur_loss.backward(retain_graph=False)
+
+            # Monitoring gradients
+            for name, param in self.geo_mlp.named_parameters():
+                count = 0
+                if param.grad is not None:
+                    count += 1
+                    # print(f"{name} gradient norm: {param.grad.norm().item()}")
+                    assert param.grad.norm().item() < 10 and param.grad.norm().item() > 1e-9, "Gradient norm is too large or too small"
+                assert count > 0, "No gradient computed"
+            # Gradient clipping to prevent exploding gradients
+            # torch.nn.utils.clip_grad_norm_(self.geo_mlp.parameters(), max_norm=10.0)
+
             opt.step()
+
 
             T05 = get_time()
 

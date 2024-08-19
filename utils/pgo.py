@@ -510,12 +510,11 @@ class PoseGraphManager:
             print("[bold red]PGO done[/bold red]")
             print("error %f --> %f:" % (error_before, error_after))
 
-        # self.graph_initials = self.graph_optimized # update the initial guess
+        self.graph_initials = self.graph_optimized # update the initial guess
         T_Wi_I_optimized = get_node_pose(self.graph_optimized, frame_id) # self.graph_optimized.atPose3(gtsam.symbol('x', frame_id))
         
         dataset.T_Wl_Llast = dataset.T_Wl_Wi @T_Wi_I_optimized @ dataset.T_I_L
         self.velocity = self.graph_optimized.atVector(gtsam.symbol('v', frame_id))
-        
         self.imu_bias = self.graph_optimized.atConstantBias(gtsam.symbol('b', frame_id))
         self.accBias = self.imu_bias.accelerometer()
         self.gyroBias = self.imu_bias.gyroscope()

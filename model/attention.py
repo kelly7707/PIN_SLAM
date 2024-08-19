@@ -47,6 +47,7 @@ class Attention(nn.Module):
                     nn.Linear(input_layer_count, qv_dim, bias_on),
                     nn.LayerNorm(qv_dim), # LN1
                     nn.ReLU(inplace=True)
+                    # nn.Tanh()
                 ])
             else:
                 shared_layers.extend([
@@ -75,14 +76,17 @@ class Attention(nn.Module):
 
         # -- Query MLP layers
         q_layers = []
-        q_dim = 11
+        q_dim = 128
         for i in range(hidden_level):
             if i == 0:
                 q_layers.extend([
                     nn.Linear(query_input_layer_dim, hidden_dim, bias_on),
                     nn.LayerNorm(hidden_dim), # LN4
                     nn.ReLU(inplace=True),
-                    # nn.Linear(input_layer_count, hidden_dim, bias_on),
+                    # nn.Tanh()
+
+                    # nn.Linear(hidden_dim, q_dim, bias_on),
+                    # nn.LayerNorm(q_dim),
                     # nn.ReLU(inplace=True)
                 ])
             # TODO: multiple layers
@@ -93,9 +97,9 @@ class Attention(nn.Module):
 
 
         # -- MHA
-        embed_dim = hidden_dim # q_hiddenlayer_dim # hidden_dim
+        embed_dim = hidden_dim #hidden_dim # q_dim 
         num_heads = 1 #4 # TODO: config & multiple heads
-        self.multihead_attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True, kdim=qv_dim, vdim=qv_dim, add_bias_kv=True,dropout=0.2)
+        self.multihead_attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True, kdim=qv_dim, vdim=qv_dim, add_bias_kv=True) # ,dropout=0.2)
         
         # LayerNorm after multihead attention
         # self.attn_norm = nn.LayerNorm(embed_dim, elementwise_affine=False) # TODO LN5

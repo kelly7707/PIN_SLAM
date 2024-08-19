@@ -340,6 +340,13 @@ class PINSLAMer:
                 self.pgm.add_combined_IMU_factor(self.dataset.processed_frame, self.dataset.processed_frame-1)
                 # --- optimization & update
                 self.pgm.optimize_pose_graph(self.dataset, self.dataset.processed_frame)
+                # --- update the neural points and poses
+                pose_diff_torch = torch.tensor(self.pgm.get_pose_diff(), device=self.config.device, dtype=self.config.dtype)
+                self.dataset.cur_pose_torch = torch.tensor(self.pgm.cur_pose, device=self.config.device, dtype=self.config.dtype)
+                self.neural_points.adjust_map(pose_diff_torch)
+                self.neural_points.recreate_hash(self.dataset.cur_pose_torch[:3,3], None, (not self.config.pgo_merge_map), self.config.rehash_with_time, cur_frame_id) # recreate hash from current time
+                self.mapper.transform_data_pool(pose_diff_torch) # transform global pool
+                self.dataset.update_poses_after_pgo(self.pgm.cur_pose, self.pgm.pgo_poses)
 
         if self.config.pgo_on: 
             self.loop_corrected = self.detect_correct_loop()
@@ -675,7 +682,8 @@ if __name__ == "__main__":
     point_cloud_topic = rospy.get_param('~point_cloud_topic', "/ouster/points")
     imu_topic = rospy.get_param('~imu_topic', "/ouster/imu")
     ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
-    bag_path = 'data/ASL/field_s/2023-08-09-19-05-05-field_s.bag'
+    # bag_path = 'data/ASL/field_s/2023-08-09-19-05-05-field_s.bag'
+    bag_path = 'data/ASL/katzensee/2023-08-21-10-20-22-katzensee_s.bag'
     
     
     # If you would like to directly run the python script without including it in a ROS package

@@ -663,7 +663,7 @@ class SLAMDataset(Dataset):
             #     self.cur_source_normals = None
 
             
-            # TODO: not only for frame_id>0
+            # \TODO\: not only for frame_id>0
             # deskewing (motion undistortion) for source point cloud
             if self.config.deskew and not self.lose_track:
                 # self.cur_source_points = deskewing(self.cur_source_points, cur_source_ts, 
@@ -720,6 +720,7 @@ class SLAMDataset(Dataset):
 
         if self.odom_poses is not None:
             cur_odom_pose = self.odom_poses[-1] @ self.last_odom_tran # T_world<-cur
+            # cur_odom_pose = self.T_Wl_Lcur # not really, because we are recording the odom poses, should accumulately updated with the relative transformation instead of using Lur directly (which is already updated with PGO)
             self.odom_poses.append(cur_odom_pose)
 
         if len(self.travel_dist) > 0:
@@ -804,12 +805,13 @@ class SLAMDataset(Dataset):
         # use the downsampled neural points here (done outside the class)
                                    
     def write_results(self, run_path: str):
-        odom_poses_out = apply_kitti_format_calib(self.odom_poses, self.calib['Tr'])
+        # odom_poses_out = apply_kitti_format_calib(self.odom_poses, self.calib['Tr'])
+        odom_poses_out = self.odom_poses
         write_kitti_format_poses(os.path.join(run_path, "odom_poses_"), odom_poses_out)
         write_tum_format_poses(os.path.join(run_path, "odom_poses_"), odom_poses_out)
         write_traj_as_o3d(self.odom_poses, os.path.join(run_path, "odom_poses.ply"))
 
-        if self.config.pgo_on:
+        if self.config.pgo_on or self.config.imu_pgo:
             slam_poses_out = apply_kitti_format_calib(self.pgo_poses, self.calib['Tr'])
             write_kitti_format_poses(os.path.join(run_path, "slam_poses_"), slam_poses_out)
             write_tum_format_poses(os.path.join(run_path, "slam_poses_"), slam_poses_out)
