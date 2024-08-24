@@ -433,26 +433,30 @@ class Mapper():
     # PIN map online training (mapping) given the fixed pose
     def mapping(self, iter_count): 
 
-        self.geo_mlp.train()
+        self.geo_mlp.train() # open train mode will not require gradient again if the gradient is already frozen
         
         if self.train_less:
             iter_count = max(1, iter_count-5)
 
         neural_point_feat = list(self.neural_points.parameters()) # geo_features
         geo_mlp_param = list(self.geo_mlp.parameters()) # decoder trainable params
-        if self.config.semantic_on:
-            sem_mlp_param = list(self.sem_mlp.parameters())
-        else: 
-            sem_mlp_param = None
-        if self.config.color_on:
-            color_mlp_param = list(self.color_mlp.parameters())
-        else:
-            color_mlp_param = None
+        
+        # --
+        sem_mlp_param = None
+        color_mlp_param = None
+        # if self.config.semantic_on:
+        #     sem_mlp_param = list(self.sem_mlp.parameters())
+        # else: 
+        #     sem_mlp_param = None
+        # if self.config.color_on:
+        #     color_mlp_param = list(self.color_mlp.parameters())
+        # else:
+        #     color_mlp_param = None
             
-        opt = setup_optimizer(self.config, neural_point_feat, geo_mlp_param, sem_mlp_param, color_mlp_param)
+        opt = setup_optimizer(self.config, neural_point_feat, geo_mlp_param, sem_mlp_param, color_mlp_param)# lr_ratio=0.5
 
         for iter in tqdm(range(iter_count), disable = self.silence):
-            # load batch data (avoid using dataloader because the data are already in gpu, memory vs speed)
+            # TODO!! load batch data (avoid using dataloader because the data are already in gpu, memory vs speed) 
 
             T00 = get_time()
             # we do not use the ray rendering loss here for the incremental mapping
@@ -463,8 +467,8 @@ class Mapper():
             poses = self.used_poses[ts]
             origins = poses[:,:3,3]
 
-            if self.ba_done_flag:
-                coord = transform_batch_torch(coord, poses) # transformed to global frame
+            # if self.ba_done_flag:
+            #     coord = transform_batch_torch(coord, poses) # transformed to global frame
 
             if self.require_gradient: #default false
                 coord.requires_grad_(True)
@@ -475,18 +479,19 @@ class Mapper():
             # predict the scaled sdf with the feature
 
             sdf_pred = self.geo_mlp.sdf(geo_feature, coord) # predict the scaled sdf with the feature # [N, K, 1]
-            if not self.config.weighted_first:
+            sdf_pred = sdf_pred.squeeze(1)
+            # if not self.config.weighted_first:
                 # sdf_pred = torch.sum(sdf_pred * weight_knn, dim=1).squeeze(1) # N
-                sdf_pred = sdf_pred.squeeze(1)
+                
 
-            if self.config.semantic_on:
-                sem_pred = self.sem_mlp.sem_label_prob(geo_feature)
-                if not self.config.weighted_first:
-                    sem_pred = torch.sum(sem_pred * weight_knn, dim=1) # N, S
-            if self.config.color_on:
-                color_pred = self.color_mlp.regress_color(color_feature) # [N, K, C]
-                if not self.config.weighted_first:
-                    color_pred = torch.sum(color_pred * weight_knn, dim=1) # N, C    
+            # if self.config.semantic_on:
+            #     sem_pred = self.sem_mlp.sem_label_prob(geo_feature)
+            #     if not self.config.weighted_first:
+            #         sem_pred = torch.sum(sem_pred * weight_knn, dim=1) # N, S
+            # if self.config.color_on:
+            #     color_pred = self.color_mlp.regress_color(color_feature) # [N, K, C]
+            #     if not self.config.weighted_first:
+            #         color_pred = torch.sum(color_pred * weight_knn, dim=1) # N, C    
 
             surface_mask = (torch.abs(sdf_label) < self.config.surface_sample_range_m)  # weight > 0
 
@@ -558,42 +563,58 @@ class Mapper():
                 eikonal_loss = ((g_used.norm(2, dim=-1) - 1.0) ** 2).mean() # both the surface and the freespace
                 cur_loss += self.config.weight_e * eikonal_loss
             
-            # optional semantic loss
-            sem_loss = 0.
-            if self.config.semantic_on and self.config.weight_s > 0:
-                loss_nll = nn.NLLLoss(reduction='mean')
-                if self.config.freespace_label_on:
-                    label_mask = sem_label >= 0 # only use the points with labels (-1, unlabled would not be used)
-                else:
-                    label_mask = sem_label > 0 # only use the points with labels (even those with free space labels would not be used) 
-                sem_pred = sem_pred[label_mask]
-                sem_label = sem_label[label_mask]
-                sem_loss = loss_nll(sem_pred[::self.config.sem_label_decimation,:], sem_label[::self.config.sem_label_decimation])
-                cur_loss += self.config.weight_s * sem_loss
+            # # optional semantic loss
+            # sem_loss = 0.
+            # if self.config.semantic_on and self.config.weight_s > 0:
+            #     loss_nll = nn.NLLLoss(reduction='mean')
+            #     if self.config.freespace_label_on:
+            #         label_mask = sem_label >= 0 # only use the points with labels (-1, unlabled would not be used)
+            #     else:
+            #         label_mask = sem_label > 0 # only use the points with labels (even those with free space labels would not be used) 
+            #     sem_pred = sem_pred[label_mask]
+            #     sem_label = sem_label[label_mask]
+            #     sem_loss = loss_nll(sem_pred[::self.config.sem_label_decimation,:], sem_label[::self.config.sem_label_decimation])
+            #     cur_loss += self.config.weight_s * sem_loss
 
-            # optional color (intensity) loss
-            color_loss = 0.
-            if self.config.color_on and self.config.weight_i > 0:
-                color_loss = color_diff_loss(color_pred[surface_mask], color_label[surface_mask], 
-                                             weight[surface_mask], self.config.loss_weight_on, l2_loss=False)
-                cur_loss += self.config.weight_i * color_loss
+            # # optional color (intensity) loss
+            # color_loss = 0.
+            # if self.config.color_on and self.config.weight_i > 0:
+            #     color_loss = color_diff_loss(color_pred[surface_mask], color_label[surface_mask], 
+            #                                  weight[surface_mask], self.config.loss_weight_on, l2_loss=False)
+            #     cur_loss += self.config.weight_i * color_loss
 
             T04 = get_time()
 
             opt.zero_grad(set_to_none=True)
             cur_loss.backward(retain_graph=False)
 
-            # Monitoring gradients
+            
+            # # # --- Gradient clipping to prevent exploding gradients
+            # torch.nn.utils.clip_grad_norm_(self.geo_mlp.parameters(), max_norm=1) # 0.8/2.0
+            # torch.nn.utils.clip_grad_norm_(self.neural_points.parameters(), max_norm=0.1) #0.1/0.08
+
+            # --- Monitoring gradients
+            # Monitor gradients for geo_mlp
+            count = 0
+            geo_mlp_grads = {}
             for name, param in self.geo_mlp.named_parameters():
-                count = 0
                 if param.grad is not None:
                     count += 1
-                    # print(f"{name} gradient norm: {param.grad.norm().item()}")
-                    assert param.grad.norm().item() < 10 and param.grad.norm().item() > 1e-9, "Gradient norm is too large or too small"
-                assert count > 0, "No gradient computed"
-            # Gradient clipping to prevent exploding gradients
-            # torch.nn.utils.clip_grad_norm_(self.geo_mlp.parameters(), max_norm=10.0)
-
+                    grad_norm = param.grad.norm().item()
+                    geo_mlp_grads[f'grad/geo_mlp/{name}'] = grad_norm
+                    # assert grad_norm < 10 and grad_norm > 1e-19, f"Gradient norm for {name} is too large or too small"
+                # assert count > 0, "No gradient computed"
+            # Monitor gradients for neural_points
+            neural_points_grads = {}
+            count = 0
+            for name, param in self.neural_points.named_parameters():
+                if param.grad is not None:
+                    count += 1
+                    grad_norm = param.grad.norm().item()
+                    neural_points_grads[f'grad/neural_points/{name}'] = grad_norm
+                    # assert grad_norm < 10 and grad_norm > 1e-9, f"Geo_feature Gradient norm for {name} is too large or too small"
+                assert count > 0, "Geo_feature No gradient computed"
+            
             opt.step()
 
 
@@ -610,8 +631,13 @@ class Mapper():
 
             if self.config.wandb_vis_on:
                 wandb_log_content = {'iter': self.total_iter, 'loss/total_loss': cur_loss, 'loss/sdf_loss': sdf_loss, \
-                                     'loss/eikonal_loss': eikonal_loss, 'loss/consistency_loss': consistency_loss, \
-                                     'loss/sem_loss': sem_loss, 'loss/color_loss': color_loss} 
+                                     'loss/eikonal_loss': eikonal_loss, 'loss/consistency_loss': consistency_loss} #, \
+                                     #'loss/sem_loss': sem_loss, 'loss/color_loss': color_loss} 
+                # Combine gradient logs into wandb log content
+                if geo_mlp_grads:
+                    wandb_log_content.update(geo_mlp_grads)
+                if neural_points_grads:
+                    wandb_log_content.update(neural_points_grads)
                 wandb.log(wandb_log_content)
 
         # update the global map

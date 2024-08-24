@@ -76,11 +76,11 @@ def plot_gt_trajectory_2d(df):
 if __name__ == "__main__":
     # Path to your TUM format CSV file
     # file_path = 'data/ASL/field_s/gt-field_s.csv'
-    # file_path = 'data/ASL/katzensee/gt-katzensee_s.csv'
+    file_path = 'data/ASL/katzensee/gt-katzensee_s.csv'
     # file_path = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv'
     # file_path = 'experiments/history/!new college norm 800warmup 0.2dropout test_ros_2024-08-08_09-07-45/odom_poses__tum.txt'
     # file_path = 'experiments/history/originPIN-SLAM-test_ros_2024-06-24_12-34-05/odom_poses__tum.txt'
-    file_path = 'experiments/test_ros_2024-08-15_13-22-32/odom_poses__tum.txt'
+    # file_path = 'experiments/test_ros_2024-08-15_13-22-32/odom_poses__tum.txt'
 
     # Read the CSV file
     df = read_tum_csv(file_path)

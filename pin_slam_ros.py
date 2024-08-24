@@ -131,6 +131,7 @@ class PINSLAMer:
         self.begin = False
         
         # ros service
+        # self.save_mesh_service = rospy.ServiceProxy('~save_mesh', Empty)
         rospy.Service('~save_results', Empty, self.save_slam_result_service_callback)
         rospy.Service('~save_mesh', Empty, self.save_mesh_service_callback)
 
@@ -234,6 +235,7 @@ class PINSLAMer:
             # Collect IMU data for calibration
             return  # Skip further processing for initial calibration frames
 
+        self.dataset.saved_lidar_ts.append(self.dataset.lidar_frame_ts['end_ts'].timestamp())
 
         imu_timestamps = [dt.datetime.fromtimestamp(imu_msg.header.stamp.secs) + dt.timedelta(microseconds=imu_msg.header.stamp.nsecs / 1000) for imu_msg in self.imu_buffer]
         relevant_imu_indices = []
@@ -308,7 +310,11 @@ class PINSLAMer:
         T2 = get_time()
 
         # II. Odometry
+        # if self.dataset.processed_frame % 1000 == 2:
+        #     self.save_mesh_service()
+
         if self.dataset.processed_frame > 0: 
+            
             tracking_result = self.tracker.tracking(self.dataset.cur_source_points, self.dataset.cur_pose_guess_torch, 
                                                 self.dataset.cur_source_colors, self.dataset.cur_source_normals)
             
@@ -671,6 +677,7 @@ if __name__ == "__main__":
     # ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
 
     # bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
+    
     # # -- ASL
     point_cloud_topic = rospy.get_param('~point_cloud_topic', "/ouster/points")
     imu_topic = rospy.get_param('~imu_topic', "/ouster/imu")

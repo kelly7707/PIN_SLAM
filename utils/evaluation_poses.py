@@ -80,8 +80,13 @@ def plot_errors(translation_errors, rotation_errors):
     plt.show()
 
 # File paths
+# new college dataset
 gt_pose_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv'
 estimated_pose_file = 'experiments/history/!new college norm 800warmup 0.2dropout test_ros_2024-08-08_09-07-45/odom_poses__tum.txt'
+# # katzensee dataset
+# estimated_pose_file = 'experiments/history/asl dataset/katzensee pinslam corrected-poses saved test_ros_2024-08-19_10-39-09/slam_poses__tum.txt'
+# gt_pose_file = 'data/ASL/katzensee/gt-katzensee_s.csv'
+
 
 # Read poses
 gt_timestamps, gt_translations, gt_rotations = read_tum_poses(gt_pose_file)

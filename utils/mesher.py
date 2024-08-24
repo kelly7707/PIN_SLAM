@@ -101,8 +101,9 @@ class Mesher():
                         batch_sdf = torch.zeros(batch_size, device=self.device) 
                     else:
                         batch_sdf = torch.zeros(batch_size, batch_geo_feature.shape[1], 1, device=self.device)
+                        batch_sdf = torch.zeros(batch_size, 1, device=self.device)
                     # predict the sdf with the feature, only do for the unmasked part (not in the unknown freespace)
-                    batch_sdf[pred_mask] = self.geo_decoder.sdf(batch_geo_feature[pred_mask]) 
+                    batch_sdf[pred_mask] = self.geo_decoder.sdf(batch_geo_feature[pred_mask], batch_coord[pred_mask]) 
                    
                     if not self.config.weighted_first:
                         # batch_sdf = torch.sum(batch_sdf * weight_knn, dim=1).squeeze(1)

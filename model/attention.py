@@ -40,14 +40,15 @@ class Attention(nn.Module):
         # ---- predict V/K/Q, assume they have the same output dim N (hidden_dim)
         # -- Shared MLP layers
         shared_layers = []
-        qv_dim = hidden_dim #hidden_dim
+        kv_dim = hidden_dim #hidden_dim
         for i in range(hidden_level):
             if i == 0:
                 shared_layers.extend([
-                    nn.Linear(input_layer_count, qv_dim, bias_on),
-                    nn.LayerNorm(qv_dim), # LN1
-                    nn.ReLU(inplace=True)
-                    # nn.Tanh()
+                    nn.Linear(input_layer_count, kv_dim, bias_on),
+                    nn.LayerNorm(kv_dim), # LN1
+                    # nn.ReLU(inplace=True)
+                    nn.Tanh()
+                    # nn.GELU()
                 ])
             else:
                 shared_layers.extend([
@@ -58,36 +59,33 @@ class Attention(nn.Module):
         self.shared_layers = nn.Sequential(*shared_layers)
 
         # Separate linear layers for value, key, and query
-        self.value_layer = nn.Linear(qv_dim, qv_dim, bias_on) #hidden_dim
-        self.key_layer = nn.Linear(qv_dim, qv_dim, bias_on)
+        self.value_layer = nn.Linear(kv_dim, kv_dim, bias_on) #hidden_dim
+        self.key_layer = nn.Linear(kv_dim, kv_dim, bias_on)
 
         # self.value_layer = nn.Sequential(
-        #     nn.Linear(qv_dim, qv_dim, bias_on),
-        #     nn.LayerNorm(qv_dim), # LN2
+        #     nn.Linear(kv_dim, kv_dim, bias_on),
+        #     nn.LayerNorm(kv_dim), # LN2
         #     nn.ReLU(inplace=True)
         #     # nn.Tanh()
         # )
         # self.key_layer = nn.Sequential(
-        #     nn.Linear(qv_dim, qv_dim, bias_on),
-        #     nn.LayerNorm(qv_dim), # LN3
+        #     nn.Linear(kv_dim, kv_dim, bias_on),
+        #     nn.LayerNorm(kv_dim), # LN3
         #     nn.ReLU(inplace=True)
         #     # nn.Tanh()
         # )
 
         # -- Query MLP layers
         q_layers = []
-        q_dim = 128
+        q_dim = hidden_dim
         for i in range(hidden_level):
             if i == 0:
                 q_layers.extend([
-                    nn.Linear(query_input_layer_dim, hidden_dim, bias_on),
-                    nn.LayerNorm(hidden_dim), # LN4
-                    nn.ReLU(inplace=True),
-                    # nn.Tanh()
-
-                    # nn.Linear(hidden_dim, q_dim, bias_on),
-                    # nn.LayerNorm(q_dim),
-                    # nn.ReLU(inplace=True)
+                    nn.Linear(query_input_layer_dim, q_dim, bias_on),
+                    nn.LayerNorm(q_dim), # LN4
+                    # nn.ReLU(inplace=True),
+                    nn.Tanh()
+                    # nn.GELU()
                 ])
             # TODO: multiple layers
             
@@ -97,9 +95,9 @@ class Attention(nn.Module):
 
 
         # -- MHA
-        embed_dim = hidden_dim #hidden_dim # q_dim 
+        embed_dim = q_dim #hidden_dim # q_dim 
         num_heads = 1 #4 # TODO: config & multiple heads
-        self.multihead_attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True, kdim=qv_dim, vdim=qv_dim, add_bias_kv=True) # ,dropout=0.2)
+        self.multihead_attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True, kdim=kv_dim, vdim=kv_dim, add_bias_kv=True) # ,dropout=0.2)
         
         # LayerNorm after multihead attention
         # self.attn_norm = nn.LayerNorm(embed_dim, elementwise_affine=False) # TODO LN5

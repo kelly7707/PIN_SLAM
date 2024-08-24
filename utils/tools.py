@@ -68,8 +68,8 @@ def setup_experiment(config: Config, argv = None, debug_mode: bool = False):
             wandb.init(project="pin-slam", config=vars(config), dir=run_path) # your own worksapce
             wandb.run.name = run_name   
             # Set a description for the run
-            wandb.run.notes = "/asl katzensee_s/ 800 warm-up; add <=1; 3 coord query -> 32 (linear Norm *relu*), 11 geo feature -> 32 (layernorm+*Relu*); MHA(kv_bias_on +**no dropout**); decoder(32->1)| turn off dropout during inference | LiDAR + IMU, PGO"
-      
+            wandb.run.notes = "|*tanh*| /asl katzensee/ 800 warm-up; *no gradient.clip*; 3 coord query -> 32 (linear Norm *Tahn*), 11 geo feature -> 32 (layernorm+*Tanh *); MHA(kv_bias_on +**no dropout**); decoder(32->1)|lr=0.01,no weight decay| LiDAR + IMU, PGO"
+                # asl katzensee_s
 
         # config file and reproducable shell script
         if argv is not None:
@@ -114,7 +114,7 @@ def setup_optimizer(config: Config, neural_point_feat, mlp_geo_param = None,
     feat_opt_dict = {'params': neural_point_feat, 'lr': lr_cur, 'weight_decay': weight_decay} 
     opt_setting.append(feat_opt_dict)
     if config.opt_adam:
-        opt = optim.Adam(opt_setting, betas=(0.9,0.99), eps = config.adam_eps) 
+        opt = optim.Adam(opt_setting, betas=(0.9,0.99), eps = config.adam_eps)  #, set weight_decay=1e-2 in config
     else:
         opt = optim.SGD(opt_setting, momentum=0.9)
     

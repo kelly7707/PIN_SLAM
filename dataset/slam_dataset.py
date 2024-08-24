@@ -50,6 +50,8 @@ class SLAMDataset(Dataset):
         self.dtype = config.dtype
         self.device = config.device
 
+        self.saved_lidar_ts = []
+
         # point cloud files
         if config.pc_path != "": # default empty in ros
             from natsort import natsorted 
@@ -808,13 +810,13 @@ class SLAMDataset(Dataset):
         # odom_poses_out = apply_kitti_format_calib(self.odom_poses, self.calib['Tr'])
         odom_poses_out = self.odom_poses
         write_kitti_format_poses(os.path.join(run_path, "odom_poses_"), odom_poses_out)
-        write_tum_format_poses(os.path.join(run_path, "odom_poses_"), odom_poses_out)
+        write_tum_format_poses(os.path.join(run_path, "odom_poses_"), odom_poses_out, self.saved_lidar_ts)
         write_traj_as_o3d(self.odom_poses, os.path.join(run_path, "odom_poses.ply"))
 
         if self.config.pgo_on or self.config.imu_pgo:
             slam_poses_out = apply_kitti_format_calib(self.pgo_poses, self.calib['Tr'])
             write_kitti_format_poses(os.path.join(run_path, "slam_poses_"), slam_poses_out)
-            write_tum_format_poses(os.path.join(run_path, "slam_poses_"), slam_poses_out)
+            write_tum_format_poses(os.path.join(run_path, "slam_poses_"), slam_poses_out, self.saved_lidar_ts)
             write_traj_as_o3d(self.pgo_poses, os.path.join(run_path, "slam_poses.ply"))
         
         if self.gt_pose_provided:
