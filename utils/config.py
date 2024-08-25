@@ -250,7 +250,7 @@ class Config:
         self.opt_adam: bool = True  # use adam or sgd
         self.bs: int = 16384
         self.lr: float = 0.01
-        self.lr_pose: float = 1e-3
+        self.lr_pose: float = 1e-3 * 0.5 #decrease the lr for pose estimation
         self.weight_decay: float = 0. # 1e-7
         self.adam_eps: float = 1e-15
 

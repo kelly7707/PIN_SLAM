@@ -445,7 +445,7 @@ class Mesher():
         if use_torch_mc:
             # torch version
             verts, faces = self.mc_mesh_torch(mc_sdf, mc_mask, voxel_size, torch.tensor(voxel_origin).to(mc_sdf)) # has some double faces problem
-            mesh = o3d.t.geometry.TriangleMesh(device=o3d.core.Device("cuda:0"))
+            mesh = o3d.t.geometry.TriangleMesh(device=o3d.core.Device("cuda:0")) # cuda 1?
             mesh.vertex.positions = o3d.core.Tensor.from_dlpack(torch.utils.dlpack.to_dlpack(verts))
             mesh.triangle.indices = o3d.core.Tensor.from_dlpack(torch.utils.dlpack.to_dlpack(faces))
             mesh = mesh.to_legacy()

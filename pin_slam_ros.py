@@ -202,7 +202,7 @@ class PINSLAMer:
         rospy.loginfo("Service called, save mesh")
 
         # update map bbx
-        global_neural_pcd_down = self.neural_points.get_neural_points_o3d(query_global=True, random_down_ratio=23) # prime number
+        global_neural_pcd_down = self.neural_points.get_neural_points_o3d(query_global=True, random_down_ratio=23, color_mode=2) # prime number
         self.dataset.map_bbx = global_neural_pcd_down.get_axis_aligned_bounding_box()
         
         mc_cm_str = str(round(self.mc_res_m*1e2))
@@ -211,7 +211,7 @@ class PINSLAMer:
         # figure out how to do it efficiently
         aabb = global_neural_pcd_down.get_axis_aligned_bounding_box()
         chunks_aabb = split_chunks(global_neural_pcd_down, aabb, self.mc_res_m*300) # reconstruct in chunks
-        cur_mesh = self.mesher.recon_aabb_collections_mesh(chunks_aabb, self.mc_res_m, mesh_path, False, self.config.semantic_on, self.config.color_on, filter_isolated_mesh=True, mesh_min_nn=self.mesh_min_nn)    
+        cur_mesh = self.mesher.recon_aabb_collections_mesh(chunks_aabb, self.mc_res_m, mesh_path, False, self.config.semantic_on, self.config.color_on, filter_isolated_mesh=True, mesh_min_nn=self.mesh_min_nn, use_torch_mc=True) # use use_torch_mc
 
         return EmptyResponse()
 
@@ -439,7 +439,7 @@ class PINSLAMer:
             self.neural_points.prune_map(self.config.max_prune_certainty) # prune uncertain points for the final output 
 
         if self.config.save_map:
-            neural_pcd = self.neural_points.get_neural_points_o3d(query_global=True, color_mode=0)
+            neural_pcd = self.neural_points.get_neural_points_o3d(query_global=True, color_mode=2) #0
             o3d.io.write_point_cloud(os.path.join(self.run_path, "map", "neural_points.ply"), neural_pcd)
             if terminate:
                 self.neural_points.clear_temp() # clear temp data for output
