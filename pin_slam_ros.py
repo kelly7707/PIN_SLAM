@@ -9,6 +9,8 @@ import rosbag
 from sensor_msgs.msg import PointCloud2, PointField, Imu
 import sensor_msgs.point_cloud2 as pc2
 from geometry_msgs.msg import PoseStamped, TransformStamped
+# import mesh_msgs.msg as #.MeshGeometryStamped import MeshGeometryStamped
+from visualization_msgs.msg import Marker
 import nav_msgs.msg
 from nav_msgs.msg import Odometry
 import std_msgs.msg
@@ -22,6 +24,7 @@ import torch
 from rich import print
 import datetime as dt
 import signal
+import matplotlib.pyplot as plt
 
 from utils.config import Config
 from utils.tools import *
@@ -112,16 +115,21 @@ class PINSLAMer:
         self.path_msg = nav_msgs.msg.Path()
         self.path_msg.header.frame_id = self.global_frame_name
         self.odom_pub = rospy.Publisher("~odometry", Odometry, queue_size=queue_size_)
-        self.frame_input_pub = rospy.Publisher("~frame/input", PointCloud2, queue_size=queue_size_)
-        self.frame_map_pub = rospy.Publisher("~frame/mapping", PointCloud2, queue_size=queue_size_)
-        self.frame_reg_pub = rospy.Publisher("~frame/registration", PointCloud2, queue_size=queue_size_)
-        self.map_pub = rospy.Publisher("~map/neural_points", PointCloud2, queue_size=queue_size_)
+        self.frame_input_pub = rospy.Publisher("~frame/input", PointCloud2, queue_size=queue_size_) # raw input
+        self.frame_map_pub = rospy.Publisher("~frame/mapping", PointCloud2, queue_size=queue_size_) # self.dataset.cur_point_cloud_torch (after deskewing) -> mapping.process
+        self.frame_reg_pub = rospy.Publisher("~frame/registration", PointCloud2, queue_size=queue_size_) # self.dataset.cur_source_points -> tracker.tracking
+        self.map_pub = rospy.Publisher("~map/neural_points", PointCloud2, queue_size=queue_size_) # self.neural_points.neural_points -> updated neural points, used as neighbors (geo_features)
         # test-deskewing
         self.frame_source_reg_pub = rospy.Publisher("~test/input_reg", PointCloud2, queue_size=queue_size_)# points from source, used for reg, before deskewing
         self.frame_pre_deskewing_map_pub = rospy.Publisher("~test/input_map", PointCloud2, queue_size=queue_size_) # points from source, used for mapping, before deskewing
         self.frame_post_deskewing_map_pub = rospy.Publisher("~test/undistorted_map", PointCloud2, queue_size=queue_size_)# points from source, used for mapping, after deskewing
         self.frame_reged_map_pub = rospy.Publisher("~test/registerd_map", PointCloud2, queue_size=queue_size_) # transformed points from mapping.process
-        
+        # test - training pc
+        self.training_pc_pub = rospy.Publisher("~map/training_pc", PointCloud2, queue_size=queue_size_) # sampled training points with loss represented by rgb color
+        # test - mesh
+        self.mesh_msg = Marker()
+        self.mesh_pub = rospy.Publisher("~map/mesh", Marker, queue_size=queue_size_) # mesh 
+
         self.tf_broadcaster = tf2_ros.TransformBroadcaster()
 
         # self.pose_pub = rospy.Publisher("~pose", PoseStamped, queue_size=100)
@@ -211,7 +219,7 @@ class PINSLAMer:
         # figure out how to do it efficiently
         aabb = global_neural_pcd_down.get_axis_aligned_bounding_box()
         chunks_aabb = split_chunks(global_neural_pcd_down, aabb, self.mc_res_m*300) # reconstruct in chunks
-        cur_mesh = self.mesher.recon_aabb_collections_mesh(chunks_aabb, self.mc_res_m, mesh_path, False, self.config.semantic_on, self.config.color_on, filter_isolated_mesh=True, mesh_min_nn=self.mesh_min_nn, use_torch_mc=True) # use use_torch_mc
+        cur_mesh = self.mesher.recon_aabb_collections_mesh(chunks_aabb, self.mc_res_m, mesh_path, False, self.config.semantic_on, self.config.color_on, filter_isolated_mesh=True, mesh_min_nn=self.mesh_min_nn) # , use_torch_mc=True
 
         return EmptyResponse()
 
@@ -366,7 +374,8 @@ class PINSLAMer:
         T5 = get_time()
 
         # for the first frame, we need more iterations to do the initialization (warm-up)
-        cur_iter_num = int(self.config.iters * self.config.init_iter_ratio * 4/3) if self.dataset.processed_frame == 0 else self.config.iters # 15
+        # cur_iter_num = int(self.config.iters * self.config.init_iter_ratio * 4/3) if self.dataset.processed_frame == 0 else self.config.iters # 15
+        cur_iter_num = 300 if self.dataset.processed_frame == 0 else self.config.iters # 15
         if self.config.adaptive_mode and self.dataset.stop_status:
             cur_iter_num = max(1, cur_iter_num-10)
         if self.dataset.processed_frame == self.config.freeze_after_frame: # freeze the decoder after certain frame (default 40)
@@ -510,6 +519,13 @@ class PINSLAMer:
         fields_xyz = [PointField('x', 0, PointField.FLOAT32, 1),
                   PointField('y', 4, PointField.FLOAT32, 1),
                   PointField('z', 8, PointField.FLOAT32, 1)]
+        # Publish point cloud with RGB values based on loss
+        fields_xyz_rgb = [
+            PointField('x', 0, PointField.FLOAT32, 1),
+            PointField('y', 4, PointField.FLOAT32, 1),
+            PointField('z', 8, PointField.FLOAT32, 1),
+            PointField('rgb', 12, PointField.UINT32, 1)
+        ]
                 
         # Neural Points
         if self.neural_points.neural_points is not None and self.config.publish_np_map:
@@ -546,11 +562,48 @@ class PINSLAMer:
             header.frame_id = self.sensor_frame_name 
 
             frame_registration_np = self.dataset.cur_source_points.detach().cpu().numpy().astype(np.float32)
-
-            # TODO: add rgb (weight as rgb)
-
+            
             frame_registration_pc2_msg = pc2.create_cloud(header, fields_xyz, frame_registration_np)
             self.frame_reg_pub.publish(frame_registration_pc2_msg)
+        
+        # -- training testing
+        # if self.mapper.training_coord is not None:
+        if self.mapper.training_coord is None:
+            header = std_msgs.msg.Header()
+            header.stamp = rospy.Time.now()
+            header.frame_id = self.global_frame_name 
+            
+            # TODO: downsample
+            down_rate_level = 10
+            training_pc_np = self.mapper.training_coord[::down_rate_level].detach().cpu().numpy().astype(np.float32)
+            training_loss_np = self.mapper.training_loss[::down_rate_level].detach().cpu().numpy().astype(np.float32)
+            
+            # Normalize the loss values to the range [0, 1] # 0.5-1.2
+            norm_max = 1.2 # training_loss_np.max()
+            norm_min = 0.5 # training_loss_np.min()
+            loss_normalized = (training_loss_np - norm_min) / (norm_max - norm_min)
+            # Map the normalized loss to RGB using a colormap
+            cmap = plt.get_cmap('jet')
+            loss_rgb = (cmap(loss_normalized)[:, :3] * 255).astype(np.uint8)  # Get RGB values and convert to uint8
+            # Convert RGB to packed float32 (uint32) format
+            rgb_packed = (loss_rgb[:, 0].astype(np.uint32) << 16) | \
+                        (loss_rgb[:, 1].astype(np.uint32) << 8)  | \
+                        (loss_rgb[:, 2].astype(np.uint32))
+            
+            # Ensure the packed RGB values are correct
+            print("Sample packed RGB values:", rgb_packed[:5])  # Debugging print
+
+            # Combine XYZ and packed RGB into a structured array
+            points = np.zeros(training_pc_np.shape[0], dtype=[('x', np.float32), ('y', np.float32), ('z', np.float32), ('rgb', np.uint32)])
+            points['x'] = training_pc_np[:, 0]
+            points['y'] = training_pc_np[:, 1]
+            points['z'] = training_pc_np[:, 2]
+            points['rgb'] = rgb_packed
+
+            # Create a PointCloud2 message
+            training_pc_msg = pc2.create_cloud(header, fields_xyz_rgb, points)
+            # training_pc_msg = pc2.create_cloud(header, fields_xyz, training_pc_np)
+            self.training_pc_pub.publish(training_pc_msg)
         
         # -- deskewing testing
         visual = True

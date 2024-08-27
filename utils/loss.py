@@ -40,11 +40,19 @@ def color_diff_loss(pred, label, weight, weighted=False, l2_loss=False):
 def sdf_bce_loss(pred, label, sigma, weight, weighted=False, bce_reduction = "mean"):
     if weighted:
         loss_bce = nn.BCEWithLogitsLoss(reduction=bce_reduction, weight=weight)
-    else:
+        # If weighted, we calculate with weights and no reduction, to get per-element losses
+        loss_bce_individual = nn.BCEWithLogitsLoss(reduction="none", weight=weight)
+    else: # default
         loss_bce = nn.BCEWithLogitsLoss(reduction=bce_reduction)
+        loss_bce_individual = nn.BCEWithLogitsLoss(reduction="none")
     label_op = torch.sigmoid(label / sigma)  # occupancy prob
-    loss = loss_bce(pred / sigma, label_op)
-    return loss
+    # loss = loss_bce(pred / sigma, label_op)
+    individual_losses = loss_bce_individual(pred / sigma, label_op)
+    
+    loss_calculated = (individual_losses).mean()
+    # assert torch.allclose(loss, loss_calculated), "Losses are not equal"
+    # return loss
+    return loss_calculated, individual_losses
 
 # the loss divised by Starry Zhong
 def sdf_zhong_loss(pred, label, trunc_dist=None, weight=None, weighted = False):

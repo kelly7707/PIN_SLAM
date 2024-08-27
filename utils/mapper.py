@@ -80,6 +80,8 @@ class Mapper():
 
         # -- visual test
         self.transformed_deskewed_map = None
+        self.training_coord = torch.empty((0, 3), device=self.device, dtype=self.dtype)
+        self.training_loss = torch.empty((0), device=self.device, dtype=self.dtype)
 
     def dynamic_filter(self, points_torch, type_2_on: bool = False):
 
@@ -453,7 +455,7 @@ class Mapper():
         # else:
         #     color_mlp_param = None
             
-        opt = setup_optimizer(self.config, neural_point_feat, geo_mlp_param, sem_mlp_param, color_mlp_param)# lr_ratio=0.5
+        opt = setup_optimizer(self.config, neural_point_feat, geo_mlp_param, sem_mlp_param, color_mlp_param, lr_ratio=0.5)# lr_ratio=0.5
 
         for iter in tqdm(range(iter_count), disable = self.silence):
             # TODO!! load batch data (avoid using dataloader because the data are already in gpu, memory vs speed) 
@@ -461,6 +463,9 @@ class Mapper():
             T00 = get_time()
             # we do not use the ray rendering loss here for the incremental mapping
             coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch(global_coord=not self.ba_done_flag) # coord here is in global frame if no ba pose update
+
+            # self.training_coord = torch.cat((self.training_coord, coord), 0)
+            self.training_coord = coord
 
             T01 = get_time()
 
@@ -526,11 +531,14 @@ class Mapper():
                     pred_near = torch.sum(pred_near * weight_knn, dim=1).squeeze(1) # N
                 g_near = get_gradient(coord_near, pred_near)
 
-            # calculate the loss            
+            # calculate the loss   
+            sdf_individual_losses = torch.zeros_like(sdf_label)      
+            eikonal_individual_losses = torch.zeros_like(sdf_label)
+
             cur_loss = 0.0
             weight = torch.abs(weight).detach() # weight's sign indicate the sample is around the surface or in the free space
             if self.config.main_loss_type == 'bce': # [used]
-                sdf_loss = sdf_bce_loss(sdf_pred, sdf_label, self.sdf_scale, weight, self.config.loss_weight_on) 
+                sdf_loss, sdf_individual_losses = sdf_bce_loss(sdf_pred, sdf_label, self.sdf_scale, weight, self.config.loss_weight_on) 
             elif self.config.main_loss_type == 'zhong': # [not used]
                 sdf_loss = sdf_zhong_loss(sdf_pred, sdf_label, None, weight, self.config.loss_weight_on) 
             elif self.config.main_loss_type == "sdf_l1": # [not used]
@@ -541,11 +549,11 @@ class Mapper():
                 sys.exit("Please choose a valid loss type")
             cur_loss += sdf_loss
 
-            # optional consistency regularization loss
+            # # optional consistency regularization loss
             consistency_loss = 0.0
-            if self.config.consistency_loss_on: # [not used]
-                consistency_loss = (1.0 - F.cosine_similarity(g[near_index, :], g_near)).mean()
-                cur_loss += self.config.weight_c * consistency_loss
+            # if self.config.consistency_loss_on: # [not used]
+            #     consistency_loss = (1.0 - F.cosine_similarity(g[near_index, :], g_near)).mean()
+            #     cur_loss += self.config.weight_c * consistency_loss
 
             # ekional loss
             eikonal_loss = 0.0
@@ -560,7 +568,10 @@ class Mapper():
                     # weight_used = weight_used[surface_mask_decimated]
                 else: # "all"  # both the surface and the freespace, used here # [used]
                     g_used = g
-                eikonal_loss = ((g_used.norm(2, dim=-1) - 1.0) ** 2).mean() # both the surface and the freespace
+                
+                eikonal_individual_losses = (g_used.norm(2, dim=-1) - 1.0) ** 2
+                
+                eikonal_loss = eikonal_individual_losses.mean() # both the surface and the freespace
                 cur_loss += self.config.weight_e * eikonal_loss
             
             # # optional semantic loss
@@ -583,6 +594,9 @@ class Mapper():
             #                                  weight[surface_mask], self.config.loss_weight_on, l2_loss=False)
             #     cur_loss += self.config.weight_i * color_loss
 
+            individual_losses = sdf_individual_losses + self.config.weight_e * eikonal_individual_losses
+            # self.training_loss = torch.cat((self.training_loss, individual_losses), 0)
+            self.training_loss = individual_losses
             T04 = get_time()
 
             opt.zero_grad(set_to_none=True)
@@ -590,8 +604,8 @@ class Mapper():
 
             
             # # # --- Gradient clipping to prevent exploding gradients
-            # torch.nn.utils.clip_grad_norm_(self.geo_mlp.parameters(), max_norm=1) # 0.8/2.0
-            # torch.nn.utils.clip_grad_norm_(self.neural_points.parameters(), max_norm=0.1) #0.1/0.08
+            torch.nn.utils.clip_grad_norm_(self.geo_mlp.parameters(), max_norm=1) # 0.8/2.0
+            torch.nn.utils.clip_grad_norm_(self.neural_points.parameters(), max_norm=0.1) #0.1/0.08
 
             # --- Monitoring gradients
             # Monitor gradients for geo_mlp

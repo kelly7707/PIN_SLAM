@@ -220,7 +220,7 @@ class Config:
         self.weight_n: float = 0.01
         
         self.numerical_grad: bool = True # use numerical gradient as in the paper Neuralangelo
-        self.gradient_decimation: int = 10 # use just a part of the points for the ekional loss when using the numerical grad, save computing time
+        self.gradient_decimation: int = 1 #10  # zjw use just a part of the points for the ekional loss when using the numerical grad, save computing time
         self.num_grad_step_ratio: float = 0.2 # step as a ratio of the surface sample sigma
 
         self.ekional_loss_on: bool = True
@@ -250,7 +250,7 @@ class Config:
         self.opt_adam: bool = True  # use adam or sgd
         self.bs: int = 16384
         self.lr: float = 0.01
-        self.lr_pose: float = 1e-3 * 0.5 #decrease the lr for pose estimation
+        self.lr_pose: float = 1e-3 #* 0.5 # zjw decrease the lr for pose estimation
         self.weight_decay: float = 0. # 1e-7
         self.adam_eps: float = 1e-15
 
