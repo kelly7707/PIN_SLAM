@@ -49,6 +49,7 @@ optimizer: # mapper
   batch_size: 10000
 eval:
   wandb_vis_on: True # log to wandb or not
+  o3d_vis_on: True
   silence_log: False
   save_map: True
   save_mesh: True
