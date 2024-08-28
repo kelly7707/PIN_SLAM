@@ -455,7 +455,7 @@ class Mapper():
         # else:
         #     color_mlp_param = None
             
-        opt = setup_optimizer(self.config, neural_point_feat, geo_mlp_param, sem_mlp_param, color_mlp_param, lr_ratio=0.5)# lr_ratio=0.5
+        opt = setup_optimizer(self.config, neural_point_feat, geo_mlp_param, sem_mlp_param, color_mlp_param)# lr_ratio=0.5
 
         for iter in tqdm(range(iter_count), disable = self.silence):
             # TODO!! load batch data (avoid using dataloader because the data are already in gpu, memory vs speed) 
@@ -594,18 +594,19 @@ class Mapper():
             #                                  weight[surface_mask], self.config.loss_weight_on, l2_loss=False)
             #     cur_loss += self.config.weight_i * color_loss
 
-            individual_losses = sdf_individual_losses + self.config.weight_e * eikonal_individual_losses
-            # self.training_loss = torch.cat((self.training_loss, individual_losses), 0)
-            self.training_loss = individual_losses
+            # -- visual of pc with loss, need to set self.gradient_decimation: int = 1
+            # individual_losses = sdf_individual_losses + self.config.weight_e * eikonal_individual_losses
+            # # self.training_loss = torch.cat((self.training_loss, individual_losses), 0)
+            # self.training_loss = individual_losses
             T04 = get_time()
 
             opt.zero_grad(set_to_none=True)
             cur_loss.backward(retain_graph=False)
 
             
-            # # # --- Gradient clipping to prevent exploding gradients
-            torch.nn.utils.clip_grad_norm_(self.geo_mlp.parameters(), max_norm=1) # 0.8/2.0
-            torch.nn.utils.clip_grad_norm_(self.neural_points.parameters(), max_norm=0.1) #0.1/0.08
+            # # --- Gradient clipping to prevent exploding gradients
+            # torch.nn.utils.clip_grad_norm_(self.geo_mlp.parameters(), max_norm=1) # 0.8/2.0
+            # torch.nn.utils.clip_grad_norm_(self.neural_points.parameters(), max_norm=0.1) #0.1/0.08
 
             # --- Monitoring gradients
             # Monitor gradients for geo_mlp

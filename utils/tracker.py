@@ -155,7 +155,7 @@ class Tracker():
 
         if eigenvalues is not None:
             min_eigenvalue = torch.min(eigenvalues).item()
-            # print("Smallest eigenvalue:", min_eigenvalue)
+            print("Smallest eigenvalue:", min_eigenvalue)
             if self.config.eigenvalue_check and min_eigenvalue < valid_point_count * eigenvalue_ratio_thre:
                 print("[bold yellow](Warning) registration failed: eigenvalue check failed[/bold yellow]") 
                 valid_flag = False
@@ -414,6 +414,7 @@ class Tracker():
         else:
             T, cov_mat, eigenvalues = implicit_reg(valid_points, sdf_grad, sdf_residual, w, lm_lambda=lm_lambda, 
                                                    require_cov=vis_weight_pc, require_eigen=vis_weight_pc) # only get metrics for the last iter
+            eigenvalues = None # zjw-add for mesh - not generate eigenvalues
 
         T3 = get_time()
 
@@ -474,7 +475,8 @@ def ct_registration_step(self, points: torch.Tensor, ts: torch.Tensor, normals: 
 # function adapted from LocNDF by Louis Wiesmann
 def implicit_reg(points, sdf_grad, sdf_residual, weight, lm_lambda = 0., require_cov=False, require_eigen=False):
 
-    cross = torch.cross(points, sdf_grad) # N,3 x N,3 TODO:check
+    # cross = torch.cross(points, sdf_grad) # N,3 x N,3 TODO:check
+    cross = torch.linalg.cross(points, sdf_grad)
     J = torch.cat([cross, sdf_grad], -1) # first rotation, then translation # N, 6
 
     N = J.T @ (weight*J) # approximate Hessian matrix # first rot, then tran # 6, 6

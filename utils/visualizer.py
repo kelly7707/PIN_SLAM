@@ -551,14 +551,14 @@ class MapVisualizer():
         else:
             self.odom_traj = o3d.geometry.LineSet()
         
-        if self.render_trajectory and pgo_poses is not None and len(pgo_poses) > 1 and (not self.before_pgo):
+        if self.render_trajectory and pgo_poses is not None and len(pgo_poses) > 1: # and (not self.before_pgo):
             pgo_poses_np = np.array(pgo_poses, dtype=np.float64)
             pgo_position_np = pgo_poses_np[:,:3,3]
 
             self.pgo_traj.points = o3d.utility.Vector3dVector(pgo_position_np)
             pgo_traj_edges = np.array([[i, i + 1] for i in range(len(pgo_poses)-1)])
             self.pgo_traj.lines = o3d.utility.Vector2iVector(pgo_traj_edges)
-            self.pgo_traj.paint_uniform_color(RED)
+            self.pgo_traj.paint_uniform_color(GREEN) #RED
 
             if self.ego_view and cur_pose is not None:
                 self.pgo_traj.transform(np.linalg.inv(cur_pose))

@@ -34,6 +34,7 @@ from utils.loop_detector import NeuralPointMapContextManager, detect_local_loop
 from utils.mesher import Mesher
 from utils.tracker import Tracker
 from utils.mapper import Mapper
+from utils.visualizer import MapVisualizer
 from model.neural_points import NeuralPoints
 from model.decoder import Decoder
 from model.attention import Attention
@@ -94,6 +95,10 @@ class PINSLAMer:
 
         # mesh reconstructor
         self.mesher = Mesher(self.config, self.neural_points, self.geo_mlp, self.sem_mlp, self.color_mlp)
+
+        # non-blocking visualizer
+        if self.config.o3d_vis_on:
+            self.o3d_vis = MapVisualizer(self.config)
 
         # pose graph manager (for back-end optimization) initialization
         self.pgm = PoseGraphManager(self.config)
@@ -324,12 +329,17 @@ class PINSLAMer:
         if self.dataset.processed_frame > 0: 
             
             tracking_result = self.tracker.tracking(self.dataset.cur_source_points, self.dataset.cur_pose_guess_torch, 
-                                                self.dataset.cur_source_colors, self.dataset.cur_source_normals)
+                                                self.dataset.cur_source_colors, self.dataset.cur_source_normals,
+                                                vis_result=self.config.o3d_vis_on and not self.config.o3d_vis_raw)
             
-            cur_pose_torch, cur_odom_cov, _, valid_flag = tracking_result
+            cur_pose_torch, cur_odom_cov, weight_pc_o3d, valid_flag = tracking_result
 
             self.dataset.lose_track = not valid_flag 
             self.mapper.lose_track = not valid_flag
+
+            if not valid_flag and self.config.o3d_vis_on:
+                if self.o3d_vis.debug_mode > 0:
+                    self.o3d_vis.stop()
 
             self.dataset.update_odom_pose(cur_pose_torch) # update dataset.cur_pose_torch
             self.begin = True
@@ -375,7 +385,7 @@ class PINSLAMer:
 
         # for the first frame, we need more iterations to do the initialization (warm-up)
         # cur_iter_num = int(self.config.iters * self.config.init_iter_ratio * 4/3) if self.dataset.processed_frame == 0 else self.config.iters # 15
-        cur_iter_num = 300 if self.dataset.processed_frame == 0 else self.config.iters # 15
+        cur_iter_num = 600 if self.dataset.processed_frame == 0 else self.config.iters # 15
         if self.config.adaptive_mode and self.dataset.stop_status:
             cur_iter_num = max(1, cur_iter_num-10)
         if self.dataset.processed_frame == self.config.freeze_after_frame: # freeze the decoder after certain frame (default 40)
@@ -391,6 +401,77 @@ class PINSLAMer:
 
         T6 = get_time()
 
+        # --- Mesh reconstruction and visualization
+        if self.config.o3d_vis_on: # if visualizer is off, there's no need to reconstruct the mesh
+            
+            self.geo_mlp.eval()
+            self.o3d_vis.cur_frame_id = self.dataset.processed_frame # frame id in the data folder
+
+            self.dataset.static_mask = self.mapper.static_mask
+            self.dataset.update_o3d_map()
+            if self.config.track_on and self.dataset.processed_frame > 0 and (not self.o3d_vis.vis_pc_color) and (weight_pc_o3d is not None): 
+                self.dataset.cur_frame_o3d = weight_pc_o3d
+
+            T7 = get_time()
+
+            # if frame_id == last_frame:
+            #     self.o3d_vis.vis_global = True
+            #     self.o3d_vis.ego_view = False
+            #     self.mapper.free_pool()
+
+            neural_pcd = None
+            if self.o3d_vis.render_neural_points: # or (frame_id == last_frame): # last frame also vis
+                neural_pcd = self.neural_points.get_neural_points_o3d(query_global=self.o3d_vis.vis_global, color_mode=self.o3d_vis.neural_points_vis_mode, random_down_ratio=1) # select from geo_feature, ts and certainty
+
+            # reconstruction by marching cubes
+            self.mesher.ts = self.dataset.processed_frame # deprecated
+            cur_mesh = None
+            if self.config.mesh_freq_frame > 0:
+                if self.o3d_vis.render_mesh and (self.dataset.processed_frame == 0 or (self.dataset.processed_frame+1) % self.config.mesh_freq_frame == 0 or self.pgm.last_loop_idx == self.dataset.processed_frame):     #  or frame_id == last_frame         
+                    
+                    # update map bbx
+                    global_neural_pcd_down = self.neural_points.get_neural_points_o3d(query_global=True, random_down_ratio=23) # prime number
+                    self.dataset.map_bbx = global_neural_pcd_down.get_axis_aligned_bounding_box()
+                    
+                    mesh_path = None # no need to save the mesh
+                    # if self.dataset.processed_frame == last_frame and self.config.save_mesh: # for last frame
+                    #     mc_cm_str = str(round(self.o3d_vis.mc_res_m*1e2))
+                    #     mesh_path = os.path.join(run_path, "mesh", 'mesh_frame_' + str(frame_id) + "_" + mc_cm_str + "cm.ply")
+                    
+                    # figure out how to do it efficiently
+                    if self.config.mc_local or (not self.o3d_vis.vis_global): # only build the local mesh
+                        # cur_mesh = self.mesher.recon_aabb_mesh(self.dataset.cur_bbx, self.o3d_vis.mc_res_m, mesh_path, True, self.config.semantic_on, self.config.color_on, filter_isolated_mesh=True, mesh_min_nn=self.o3d_vis.mesh_min_nn)
+                        chunks_aabb = split_chunks(global_neural_pcd_down, self.dataset.cur_bbx, self.o3d_vis.mc_res_m*100) # reconstruct in chunks
+                        cur_mesh = self.mesher.recon_aabb_collections_mesh(chunks_aabb, self.o3d_vis.mc_res_m, mesh_path, True, self.config.semantic_on, self.config.color_on, filter_isolated_mesh=True, mesh_min_nn=self.o3d_vis.mesh_min_nn)    
+                    else:
+                        aabb = global_neural_pcd_down.get_axis_aligned_bounding_box()
+                        chunks_aabb = split_chunks(global_neural_pcd_down, aabb, self.o3d_vis.mc_res_m*300) # reconstruct in chunks
+                        cur_mesh = self.mesher.recon_aabb_collections_mesh(chunks_aabb, self.o3d_vis.mc_res_m, mesh_path, False, self.config.semantic_on, self.config.color_on, filter_isolated_mesh=True, mesh_min_nn=self.o3d_vis.mesh_min_nn)    
+            cur_sdf_slice = None
+            if self.config.sdfslice_freq_frame > 0:
+                if self.o3d_vis.render_sdf and (self.dataset.processed_frame == 0 or (self.dataset.processed_frame+1) % self.config.sdfslice_freq_frame == 0):
+                    slice_res_m = self.config.voxel_size_m * 0.2
+                    sdf_bound = self.config.surface_sample_range_m * 4.
+                    query_sdf_locally = True
+                    if self.o3d_vis.vis_global:
+                        cur_sdf_slice_h = self.mesher.generate_bbx_sdf_hor_slice(self.dataset.map_bbx, self.dataset.T_Wl_Lcur[2,3]+self.o3d_vis.sdf_slice_height, slice_res_m, False, -sdf_bound, sdf_bound) # horizontal slice
+                    else:
+                        cur_sdf_slice_h = self.mesher.generate_bbx_sdf_hor_slice(self.dataset.cur_bbx, self.dataset.T_Wl_Lcur[2,3]+self.o3d_vis.sdf_slice_height, slice_res_m, query_sdf_locally, -sdf_bound, sdf_bound) # horizontal slice (local)
+                    if self.config.vis_sdf_slice_v:
+                        cur_sdf_slice_v = self.mesher.generate_bbx_sdf_ver_slice(self.dataset.cur_bbx, self.dataset.T_Wl_Lcur[0,3], slice_res_m, query_sdf_locally, -sdf_bound, sdf_bound) # vertical slice (local)
+                        cur_sdf_slice = cur_sdf_slice_h + cur_sdf_slice_v
+                    else:
+                        cur_sdf_slice = cur_sdf_slice_h
+                                
+            pool_pcd = self.mapper.get_data_pool_o3d(down_rate=17, only_cur_data=self.o3d_vis.vis_only_cur_samples) if self.o3d_vis.render_data_pool else None # down rate should be a prime number
+            loop_edges = self.pgm.loop_edges if self.config.pgo_on else None
+            self.o3d_vis.update_traj(self.dataset.T_Wl_Lcur, self.dataset.odom_poses, self.dataset.gt_poses, self.dataset.pgo_poses, loop_edges)
+            self.o3d_vis.update(self.dataset.cur_frame_o3d, self.dataset.T_Wl_Lcur, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd)
+            
+        
+        
+        
+        
         # publishing
         self.publish_msg(lidar_msg)
 

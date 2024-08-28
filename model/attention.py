@@ -97,7 +97,7 @@ class Attention(nn.Module):
         # -- MHA
         embed_dim = q_dim #hidden_dim # q_dim 
         num_heads = 1 #4 # TODO: config & multiple heads
-        self.multihead_attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True, kdim=kv_dim, vdim=kv_dim, add_bias_kv=True) # ,dropout=0.2)
+        self.multihead_attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True, kdim=kv_dim, vdim=kv_dim, add_bias_kv=True) #, add_bias_kv=True, dropout=0.2
         
         # LayerNorm after multihead attention
         # self.attn_norm = nn.LayerNorm(embed_dim, elementwise_affine=False) # TODO LN5

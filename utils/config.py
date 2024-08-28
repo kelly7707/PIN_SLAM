@@ -220,7 +220,7 @@ class Config:
         self.weight_n: float = 0.01
         
         self.numerical_grad: bool = True # use numerical gradient as in the paper Neuralangelo
-        self.gradient_decimation: int = 1 #10  # zjw use just a part of the points for the ekional loss when using the numerical grad, save computing time
+        self.gradient_decimation: int = 1  # 10-pinslam #1-zjw use just a part of the points for the ekional loss when using the numerical grad, save computing time
         self.num_grad_step_ratio: float = 0.2 # step as a ratio of the surface sample sigma
 
         self.ekional_loss_on: bool = True
@@ -294,7 +294,7 @@ class Config:
         self.eval_freq_iters: int = 100
         self.vis_freq_iters: int = 100
         self.save_freq_iters: int = 100
-        self.mesh_freq_frame: int = 10  # do the reconstruction per x frames
+        self.mesh_freq_frame: int = 5 # 10 #zjw # do the reconstruction per x frames
         self.sdfslice_freq_frame: int = 1 # do the sdf slice visulization per x frames
         self.vis_sdf_slice_v: bool = False
         self.sdf_slice_height: float = -1.0 # (m)

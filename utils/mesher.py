@@ -59,7 +59,7 @@ class Mesher():
             if out_torch:
                 sdf_pred = torch.zeros(sample_count)
             else:
-                sdf_pred = np.zeros(sample_count)
+                sdf_pred = np.zeros(sample_count) #
         else: 
             sdf_pred = None
         if query_sem:
@@ -80,10 +80,11 @@ class Mesher():
             if out_torch:
                 mc_mask = torch.zeros(sample_count)
             else:
-                mc_mask = np.zeros(sample_count)
+                mc_mask = np.zeros(sample_count) #
         else:
             mc_mask = None
         
+        self.geo_decoder.eval()
         with torch.no_grad(): # eval step
             for n in tqdm(range(iter_n), disable = self.silence):
                 head = n*bs
@@ -100,10 +101,11 @@ class Mesher():
                     if self.config.weighted_first:
                         batch_sdf = torch.zeros(batch_size, device=self.device) 
                     else:
-                        batch_sdf = torch.zeros(batch_size, batch_geo_feature.shape[1], 1, device=self.device)
+                        # batch_sdf = torch.zeros(batch_size, batch_geo_feature.shape[1], 1, device=self.device)
                         batch_sdf = torch.zeros(batch_size, 1, device=self.device)
                     # predict the sdf with the feature, only do for the unmasked part (not in the unknown freespace)
-                    batch_sdf[pred_mask] = self.geo_decoder.sdf(batch_geo_feature[pred_mask], batch_coord[pred_mask]) 
+                    if batch_geo_feature[pred_mask].shape[0] > 0:
+                        batch_sdf[pred_mask] = self.geo_decoder.sdf(batch_geo_feature[pred_mask], batch_coord[pred_mask]) 
                    
                     if not self.config.weighted_first:
                         # batch_sdf = torch.sum(batch_sdf * weight_knn, dim=1).squeeze(1)
