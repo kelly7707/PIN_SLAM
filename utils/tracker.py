@@ -9,6 +9,7 @@ import torch
 import math
 import open3d as o3d
 from rich import print
+import wandb
 
 from utils.config import Config
 from utils.semantic_kitti_utils import *
@@ -31,6 +32,8 @@ class Tracker():
 
         self.device = config.device
         self.dtype = config.dtype
+
+        self.frame = 0
         # NOTE: use torch.float64 for all the transformations and poses
 
         self.sdf_scale = config.logistic_gaussian_ratio*config.sigma_sigmoid_m 
@@ -278,6 +281,21 @@ class Tracker():
             if query_certainty:
                 certainty[head:tail] = batch_certainty.detach()
 
+        # --- Calculate and monitor sdf_pred statistics
+        sdf_pred_mean = sdf_pred.mean()
+        sdf_pred_std = sdf_pred.std()
+        sdf_pred_min = sdf_pred.min()
+        sdf_pred_max = sdf_pred.max()
+        sdf_pred_median = sdf_pred.median()
+
+        if self.config.wandb_vis_on:
+            wandb_log_content = {'sdf_monitor/sdf_pred_mean': sdf_pred_mean,
+                                'sdf_monitor/sdf_pred_std': sdf_pred_std,
+                                'sdf_monitor/sdf_pred_min': sdf_pred_min,
+                                'sdf_monitor/sdf_pred_max': sdf_pred_max,
+                                'sdf_monitor/sdf_pred_median': sdf_pred_median}
+            wandb.log(wandb_log_content)
+        
         return sdf_pred, sdf_grad, color_pred, color_grad, sem_pred, mc_mask, certainty, sdf_std                   
 
     def registration_step(self, points: torch.Tensor, normals: torch.Tensor, 

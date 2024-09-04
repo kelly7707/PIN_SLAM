@@ -68,8 +68,8 @@ def setup_experiment(config: Config, argv = None, debug_mode: bool = False):
             wandb.init(project="pin-slam", config=vars(config), dir=run_path) # your own worksapce
             wandb.run.name = run_name   
             # Set a description for the run
-            wandb.run.notes = "|*mesher*| /asl katzensee/ 600 warm-up; *no gradient.clip*; 3 coord query -> 32 (linear Norm *tanh*), 11 geo feature -> 32 (layernorm+*tanh *); MHA(kv_bias_on +**no dropout, add_bias_kv True**); decoder(32->1)|*gradient_decimation = 1*|lr=0.01,1e-3 , no weight decay, *adamw*|*mapper iter=50* | LiDAR + IMU, PGO"
-                # asl katzensee_s
+            wandb.run.notes = "|*trajs*| /asl katzensee_s/ 600 warm-up; *no gradient.clip*; 3 coord query -> 32 (linear Norm *tanh*), 11 geo feature -> 32 (layernorm+*tanh *); MHA(kv_bias_on +**1e-3 dropout, add_bias_kv True**); decoder(32->1)|*gradient_decimation = 1*|lr=0.01,1e-3 , no weight decay, *adamw*|*mapper iter=15, tracker iter =50* | *not freezing decoder*| LiDAR + IMU, PGO"
+                # asl katzensee_s // new college
 
         # config file and reproducable shell script
         if argv is not None:

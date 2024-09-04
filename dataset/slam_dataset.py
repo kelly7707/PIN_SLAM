@@ -513,6 +513,8 @@ class SLAMDataset(Dataset):
             self.travel_dist.append(0.)
             self.T_Wl_Llast = self.T_Wl_Lcur
 
+            # Imu test
+            self.cur_pose_init_guess = self.T_Wl_Lcur
             # # Lidar test
             self.estimated_pose_lidar = self.T_Wl_Lcur
             # # IMU test - frame0 initialization
@@ -554,7 +556,7 @@ class SLAMDataset(Dataset):
             T_Wl_I = self.T_Wl_Wi @ T_Wi_Icur
             T_Llast_Lcur =  np.linalg.inv(self.T_Wl_Llast) @ T_Wl_Lcur
             
-            cur_pose_init_guess = T_Wl_Lcur
+            self.cur_pose_init_guess = T_Wl_Lcur
 
 
             # --- testing: IMU preinte vidual
@@ -630,7 +632,7 @@ class SLAMDataset(Dataset):
 
 
             # --- pose initial guess tensor
-            self.cur_pose_guess_torch = torch.tensor(cur_pose_init_guess, dtype=torch.float64, device=self.device)   
+            self.cur_pose_guess_torch = torch.tensor(self.cur_pose_init_guess, dtype=torch.float64, device=self.device)   
             cur_source_torch = self.cur_point_cloud_torch.clone() 
             
             # source point voxel downsampling (for registration)

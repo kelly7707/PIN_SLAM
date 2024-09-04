@@ -26,6 +26,7 @@ training:
   attention_mode: True
 decoder:
   mlp_hidden_dim: 32 #64
+  freeze_after_frame: 50 #40
 loss:
   main_loss_type: bce
   loss_weight_on: True
@@ -38,14 +39,14 @@ continual:
   pool_filter_freq: 10
 tracker:
   source_vox_down_m: 0.8
-  iter_n: 50
+  iter_n: 50 #50
 imu_pgo: True
 # pgo:
 #   map_context: True
 #   pgo_freq_frame: 30
 #   virtual_side_count: 6
 optimizer: # mapper
-  iters: 50 #15  # iterations per frame
+  iters: 15 #15  # iterations per frame
   batch_size: 10000
 eval:
   wandb_vis_on: True # log to wandb or not

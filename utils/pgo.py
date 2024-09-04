@@ -526,12 +526,13 @@ class PoseGraphManager:
         frame_count = self.curr_node_idx+1
         self.pgo_poses = [None] * frame_count # start from 0
         for idx in range(frame_count):
-            self.pgo_poses[idx] = get_node_pose(self.graph_optimized, idx) @ np.linalg.inv(dataset.T_L_I)
-        # self.pgo_poses[frame_id] = optimized_pose_imuframe # TODO
-        self.pgo_poses[frame_id] = dataset.T_Wl_Llast
+            self.pgo_poses[idx] = dataset.T_Wl_Wi @ get_node_pose(self.graph_optimized, idx) @ dataset.T_I_L #np.linalg.inv(dataset.T_L_I)
+        # # # self.pgo_poses[frame_id] = optimized_pose_imuframe # TODO
+        # self.pgo_poses[frame_id] = dataset.T_Wl_Llast
 
         self.cur_pose = self.pgo_poses[self.curr_node_idx] 
-        assert np.allclose(self.pgo_poses[self.curr_node_idx], dataset.T_Wl_Llast, atol=1e-8), "The matrices do not match."
+        assert np.allclose(self.cur_pose, dataset.T_Wl_Lcur, atol=1e-8), "The matrices do not match."
+        # assert np.allclose(self.pgo_poses[self.curr_node_idx], dataset.T_Wl_Llast, atol=1e-8), "The matrices do not match."
 
         self.pgo_count += 1
 

@@ -110,7 +110,7 @@ class PINSLAMer:
         self.loop_corrected = False
         self.loop_reg_failed_count = 0
 
-        # service mesh
+        # service mesh (mask_min_nn_count)
         self.mesh_min_nn = self.config.mesh_min_nn
         self.mc_res_m = self.config.mc_res_m
 
@@ -134,6 +134,16 @@ class PINSLAMer:
         # test - mesh
         self.mesh_msg = Marker()
         self.mesh_pub = rospy.Publisher("~map/mesh", Marker, queue_size=queue_size_) # mesh 
+        # test - cause imu v.s. tracking v.s. pgo
+        self.traj_pub_imu = rospy.Publisher("~traj/imu_initial_guess", nav_msgs.msg.Path, queue_size=queue_size_)
+        self.path_msg_imu = nav_msgs.msg.Path()
+        self.path_msg_imu.header.frame_id = self.global_frame_name
+        self.traj_pub_tracking = rospy.Publisher("~traj/tracking", nav_msgs.msg.Path, queue_size=queue_size_)
+        self.path_msg_tracking = nav_msgs.msg.Path()
+        self.path_msg_tracking.header.frame_id = self.global_frame_name
+        self.traj_pub_pgo = rospy.Publisher("~traj/pgo", nav_msgs.msg.Path, queue_size=queue_size_)
+        self.path_msg_pgo = nav_msgs.msg.Path()
+        self.path_msg_pgo.header.frame_id = self.global_frame_name
 
         self.tf_broadcaster = tf2_ros.TransformBroadcaster()
 
@@ -328,6 +338,7 @@ class PINSLAMer:
 
         if self.dataset.processed_frame > 0: 
             
+            self.tracker.frame = self.dataset.processed_frame
             tracking_result = self.tracker.tracking(self.dataset.cur_source_points, self.dataset.cur_pose_guess_torch, 
                                                 self.dataset.cur_source_colors, self.dataset.cur_source_normals,
                                                 vis_result=self.config.o3d_vis_on and not self.config.o3d_vis_raw)
@@ -348,7 +359,7 @@ class PINSLAMer:
         
         T3 = get_time()
 
-        # III. Loop detection and pgo 
+        # III. imu pgo 
         if self.config.imu_pgo:
             self.pgm.add_frame_node(self.dataset.processed_frame, np.linalg.inv(self.dataset.T_Wl_Wi) @ self.dataset.pgo_poses[self.dataset.processed_frame] @ self.dataset.T_L_I) #  add new node and pose initial guess
             self.pgm.init_poses = np.linalg.inv(self.dataset.T_Wl_Wi) @ self.dataset.pgo_poses @ self.dataset.T_L_I #  
@@ -369,7 +380,7 @@ class PINSLAMer:
             self.loop_corrected = self.detect_correct_loop()
 
         T4 = get_time()
-
+     
         # IV: Mapping and bundle adjustment
 
         # if lose track, we will not update the map and data pool (don't let the wrong pose to corrupt the map)
@@ -469,7 +480,9 @@ class PINSLAMer:
             self.o3d_vis.update(self.dataset.cur_frame_o3d, self.dataset.T_Wl_Lcur, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd)
             
         
-        
+        if self.config.save_mesh:
+            if self.dataset.processed_frame>0 and self.dataset.processed_frame % 70 == 0:
+                self.save_mesh()
         
         
         # publishing
@@ -500,6 +513,19 @@ class PINSLAMer:
 
         # For Livox LIDAR, you need to Livox driver to convert the point cloud to the desired type
 
+    def save_mesh(self):
+        global_neural_pcd_down = self.neural_points.get_neural_points_o3d(query_global=True, random_down_ratio=23, color_mode=2) # prime number
+        self.dataset.map_bbx = global_neural_pcd_down.get_axis_aligned_bounding_box()
+        
+        mc_cm_str = str(round(self.mc_res_m*1e2))
+        mesh_path = os.path.join(self.run_path, "mesh", 'mesh_frame_' + str(self.dataset.processed_frame) + "_" + mc_cm_str + "cm.ply")
+        
+        # figure out how to do it efficiently
+        aabb = global_neural_pcd_down.get_axis_aligned_bounding_box()
+        chunks_aabb = split_chunks(global_neural_pcd_down, aabb, self.mc_res_m*300) # reconstruct in chunks
+        cur_mesh = self.mesher.recon_aabb_collections_mesh(chunks_aabb, self.mc_res_m, mesh_path, False, self.config.semantic_on, self.config.color_on, filter_isolated_mesh=True, mesh_min_nn=self.mesh_min_nn) # , use_torch_mc=True
+
+
     def check_exit(self):
         rate = rospy.Rate(1)
 
@@ -519,6 +545,10 @@ class PINSLAMer:
         print("Mission completed")
         
         self.dataset.write_results(self.run_path)
+
+        if self.config.save_mesh:
+            self.save_mesh()
+
         if self.config.pgo_on and self.pgm.pgo_count>0:
             print("# Loop corrected: ", self.pgm.pgo_count)
             self.pgm.write_g2o(os.path.join(self.run_path, "final_pose_graph.g2o"))
@@ -558,6 +588,47 @@ class PINSLAMer:
         odom_msg.pose.pose = pose_msg.pose
         self.odom_pub.publish(odom_msg)
 
+        # -testing 
+        imu_pose = self.dataset.cur_pose_init_guess
+        imu_pose_q = tf.transformations.quaternion_from_matrix(imu_pose)
+        imu_pose_t = imu_pose[0:3,3]
+        imu_pose_msg = PoseStamped()
+        imu_pose_msg.header.stamp = rospy.Time.now()
+        imu_pose_msg.header.frame_id = self.global_frame_name
+        imu_pose_msg.pose.orientation.x = imu_pose_q[0]
+        imu_pose_msg.pose.orientation.y = imu_pose_q[1]
+        imu_pose_msg.pose.orientation.z = imu_pose_q[2]
+        imu_pose_msg.pose.orientation.w = imu_pose_q[3]
+        imu_pose_msg.pose.position.x = imu_pose_t[0]
+        imu_pose_msg.pose.position.y = imu_pose_t[1]
+        imu_pose_msg.pose.position.z = imu_pose_t[2]
+
+        self.path_msg_imu.header.stamp = rospy.Time.now()
+        self.path_msg_imu.poses.append(imu_pose_msg)
+
+        self.traj_pub_imu.publish(self.path_msg_imu) 
+        # --- 
+        tracking_pose = self.dataset.estimated_pose_lidar
+        tracking_pose_q = tf.transformations.quaternion_from_matrix(tracking_pose)
+        tracking_pose_t = tracking_pose[0:3,3]
+        tracking_pose_msg = PoseStamped()
+        tracking_pose_msg.header.stamp = rospy.Time.now()
+        tracking_pose_msg.header.frame_id = self.global_frame_name
+        tracking_pose_msg.pose.orientation.x = tracking_pose_q[0]
+        tracking_pose_msg.pose.orientation.y = tracking_pose_q[1]
+        tracking_pose_msg.pose.orientation.z = tracking_pose_q[2]
+        tracking_pose_msg.pose.orientation.w = tracking_pose_q[3]
+        tracking_pose_msg.pose.position.x = tracking_pose_t[0]
+        tracking_pose_msg.pose.position.y = tracking_pose_t[1]
+        tracking_pose_msg.pose.position.z = tracking_pose_t[2]
+
+        self.path_msg_tracking.header.stamp = rospy.Time.now()
+        self.path_msg_tracking.poses.append(tracking_pose_msg)
+
+        self.traj_pub_tracking.publish(self.path_msg_tracking) 
+
+
+        # 
         transform_msg = TransformStamped()
         transform_msg.header.stamp = rospy.Time.now()
         transform_msg.header.frame_id = self.global_frame_name
@@ -575,7 +646,7 @@ class PINSLAMer:
 
         self.path_msg.poses.append(pose_msg)
 
-        if self.loop_corrected or self.config.imu_pgo: # update traj after pgo
+        if self.loop_corrected: # or self.config.imu_pgo: # update traj after pgo
             self.path_msg.poses = []
             for cur_pose in self.dataset.pgo_poses:
                 cur_q = tf.transformations.quaternion_from_matrix(cur_pose)
@@ -595,6 +666,26 @@ class PINSLAMer:
                 self.path_msg.poses.append(pose_msg)
         
         self.traj_pub.publish(self.path_msg) 
+
+        if self.config.imu_pgo: # or : # update traj after pgo
+            self.path_msg_pgo.poses = []
+            for cur_pose in self.dataset.pgo_poses:
+                cur_q = tf.transformations.quaternion_from_matrix(cur_pose)
+                cur_t = cur_pose[0:3,3]
+
+                pose_msg_pgo = PoseStamped()
+                pose_msg_pgo.header.stamp = rospy.Time.now()
+                pose_msg_pgo.header.frame_id = self.global_frame_name
+                pose_msg_pgo.pose.orientation.x = cur_q[0]
+                pose_msg_pgo.pose.orientation.y = cur_q[1]
+                pose_msg_pgo.pose.orientation.z = cur_q[2]
+                pose_msg_pgo.pose.orientation.w = cur_q[3]
+                pose_msg_pgo.pose.position.x = cur_t[0]
+                pose_msg_pgo.pose.position.y = cur_t[1]
+                pose_msg_pgo.pose.position.z = cur_t[2]
+
+                self.path_msg_pgo.poses.append(pose_msg_pgo)
+        self.traj_pub_pgo.publish(self.path_msg_pgo)
 
         # Publish point cloud
         fields_xyz = [PointField('x', 0, PointField.FLOAT32, 1),
@@ -812,7 +903,7 @@ if __name__ == "__main__":
 
     # bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
     
-    # # -- ASL
+    # -- ASL
     point_cloud_topic = rospy.get_param('~point_cloud_topic', "/ouster/points")
     imu_topic = rospy.get_param('~imu_topic', "/ouster/imu")
     ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")

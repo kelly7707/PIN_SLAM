@@ -97,7 +97,7 @@ class Attention(nn.Module):
         # -- MHA
         embed_dim = q_dim #hidden_dim # q_dim 
         num_heads = 1 #4 # TODO: config & multiple heads
-        self.multihead_attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True, kdim=kv_dim, vdim=kv_dim, add_bias_kv=True) #, add_bias_kv=True, dropout=0.2
+        self.multihead_attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True, kdim=kv_dim, vdim=kv_dim, add_bias_kv=True, dropout=1e-3) #, add_bias_kv=True, dropout=0.2
         
         # LayerNorm after multihead attention
         # self.attn_norm = nn.LayerNorm(embed_dim, elementwise_affine=False) # TODO LN5
@@ -124,6 +124,12 @@ class Attention(nn.Module):
     # unit is already m
     def sdf(self, features, query_features=None):
         assert features.shape[0] == query_features.shape[0]
+        # zero_rows_key = (features == 0).all(dim=-1).any()
+        # zero_rows_value = (query_features == 0).all(dim=-1).any()
+
+        # print("Zero rows in key tensor:", zero_rows_key.any())
+        # print("Zero rows in value tensor:", zero_rows_value.any())
+
         # query_features = F.layer_norm(query_features, [query_features.shape[1]])
 
         shared_output = self.shared_layers(features)
@@ -135,6 +141,8 @@ class Attention(nn.Module):
 
         query = self.query_layer(query_features.clone().detach()).unsqueeze(1)  #.clone().detach()
         
+        assert (query_features.isnan().any() and features.isnan().any() and value.isnan().any() and key.isnan().any() and query.isnan().any()) == False        
+        assert ((query == 0).all(dim=-1).sum(dim=-1).sum().item() == 0) and ((value == 0).all(dim=-1).sum(dim=-1).sum().item() == 0) and ((key == 0).all(dim=-1).sum(dim=-1).sum().item() == 0)  # and ((query_features == 0).all(dim=-1).sum(dim=-1).sum().item() == 0) and ((features == 0).all(dim=-1).sum(dim=-1).sum().item() == 0)
         attn_output = self.multihead_attn(query, key, value, need_weights=False) # ignore attn_output_weights
 
         # # Apply LayerNorm after multihead attention

@@ -148,6 +148,7 @@ class DataSampler():
         # assign sdf labels to the samples
         # projective distance as the label: behind +, in-front - 
         sdf_label_tensor = all_sample_displacement.squeeze(1)  # scaled [-1, 1] # as distance (before sigmoid)
+        # assert torch.all(sdf_label_tensor <= 1.0) and torch.all(sdf_label_tensor >= -1.0) # not necessary
 
         # assign the normal label to the samples
         normal_label_tensor = None
@@ -169,6 +170,8 @@ class DataSampler():
         all_sample_points = all_sample_points.reshape(all_sample_n, -1, 3).transpose(0, 1).reshape(-1, 3)
         sdf_label_tensor = sdf_label_tensor.reshape(all_sample_n, -1).transpose(0, 1).reshape(-1) 
         sdf_label_tensor *= (-1) # convert to the same sign as 
+        # assert torch.all(sdf_label_tensor <= 1.0) and torch.all(sdf_label_tensor >= -1.0) # not necessary
+
         
         weight_tensor = weight_tensor.reshape(all_sample_n, -1).transpose(0, 1).reshape(-1)
         # depths_tensor = depths_tensor.reshape(all_sample_n, -1).transpose(0, 1).reshape(-1)

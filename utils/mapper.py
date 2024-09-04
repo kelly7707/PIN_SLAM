@@ -159,6 +159,7 @@ class Mapper():
         (coord, sdf_label, normal_label, sem_label, color_label, weight) = \
             self.sampler.sample(frame_point_torch, frame_normal_torch, frame_label_torch, frame_color_torch)        
         # coord is in sensor local frame
+
             
         time_repeat = torch.tensor(frame_id, dtype=torch.long, device=self.device).repeat(coord.shape[0])
 
@@ -171,7 +172,7 @@ class Mapper():
         if self.config.from_sample_points:
             if self.config.from_all_samples:
                 update_points = coord
-            else: # default
+            else: # default: close-to-surface samples
                 update_points = coord[torch.abs(sdf_label) < self.config.surface_sample_range_m * self.config.map_surface_ratio, :]
                 update_points = transform_torch(update_points, cur_pose_torch) # local -> global
         else:   
@@ -485,6 +486,12 @@ class Mapper():
 
             sdf_pred = self.geo_mlp.sdf(geo_feature, coord) # predict the scaled sdf with the feature # [N, K, 1]
             sdf_pred = sdf_pred.squeeze(1)
+
+            # -- test(doesn't too importance) monitor the statistics
+            self.monitor(sdf_pred, sdf_label)
+            
+
+
             # if not self.config.weighted_first:
                 # sdf_pred = torch.sum(sdf_pred * weight_knn, dim=1).squeeze(1) # N
                 
@@ -646,7 +653,8 @@ class Mapper():
 
             if self.config.wandb_vis_on:
                 wandb_log_content = {'iter': self.total_iter, 'loss/total_loss': cur_loss, 'loss/sdf_loss': sdf_loss, \
-                                     'loss/eikonal_loss': eikonal_loss, 'loss/consistency_loss': consistency_loss} #, \
+                                     'loss/eikonal_loss': eikonal_loss, 'loss/consistency_loss': consistency_loss,
+                                     } #, \
                                      #'loss/sem_loss': sem_loss, 'loss/color_loss': color_loss} 
                 # Combine gradient logs into wandb log content
                 if geo_mlp_grads:
@@ -658,6 +666,44 @@ class Mapper():
         # update the global map
         self.neural_points.assign_local_to_global() 
 
+    # monitor statistics
+    def monitor(self, sdf_pred, sdf_label):
+        # --- Calculate and monitor sdf_pred statistics
+        sdf_pred_mean = sdf_pred.mean()
+        sdf_pred_std = sdf_pred.std()
+        sdf_pred_min = sdf_pred.min()
+        sdf_pred_max = sdf_pred.max()
+        sdf_pred_median = sdf_pred.median()
+        # sum_value = sdf_pred.sum()
+
+        # --- Calculate and monitor (sdf_pred / self.sdf_scale) statistics
+        sdf_pred_scaled = sdf_pred / self.sdf_scale
+        sdf_pred_scaled_mean = sdf_pred_scaled.mean()
+        sdf_pred_scaled_std = sdf_pred_scaled.std()
+        sdf_pred_scaled_min = sdf_pred_scaled.min()
+        sdf_pred_scaled_max = sdf_pred_scaled.max()
+        sdf_pred_scaled_median = sdf_pred_scaled.median()
+
+        # --- Calculate and monitor sdf_label statistics
+        sdf_label_mean = sdf_label.mean()
+        sdf_label_std = sdf_label.std()
+        sdf_label_min = sdf_label.min()
+        sdf_label_max = sdf_label.max()
+        sdf_label_median = sdf_label.median()
+
+        # --- Calculate and monitor the sigmoid(sdf_label) statistics
+        label_op = torch.sigmoid(sdf_label / self.sdf_scale)
+        label_op_mean = label_op.mean()
+        label_op_std = label_op.std()
+        label_op_min = label_op.min()
+        label_op_max = label_op.max()
+        label_op_median = label_op.median()
+
+        return sdf_pred_mean, sdf_pred_std, sdf_pred_min, sdf_pred_max, sdf_pred_median, \
+                sdf_pred_scaled_mean, sdf_pred_scaled_std, sdf_pred_scaled_min, sdf_pred_scaled_max, sdf_pred_scaled_median, \
+                sdf_label_mean, sdf_label_std, sdf_label_min, sdf_label_max, sdf_label_median, \
+                label_op_mean, label_op_std, label_op_min, label_op_max, label_op_median
+    
     # joint optimization of PIN map and the poses in the sliding window
     def bundle_adjustment(self, iter_count, window_size: int = 50, use_lie_group: bool = False):
         

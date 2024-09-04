@@ -86,7 +86,9 @@ class Mesher():
         
         self.geo_decoder.eval()
         with torch.no_grad(): # eval step
+        # with torch.inference_mode():
             for n in tqdm(range(iter_n), disable = self.silence):
+                print('----------mesh debug1---, n=',n)
                 head = n*bs
                 tail = min((n+1)*bs, sample_count)
                 batch_coord = coord[head:tail, :]
@@ -96,7 +98,9 @@ class Mesher():
                 batch_geo_feature, batch_color_feature, weight_knn, nn_count, _ = self.neural_points.query_feature(batch_coord, training_mode=False, query_locally=query_locally, # inference mode, query globally
                                                                                                                    query_geo_feature=query_sdf or query_sem, query_color_feature=query_color) 
                 
-                pred_mask = (nn_count >= 1) # only query sdf here
+                # pred_mask = (nn_count >= 1) # only query sdf here
+                pred_mask = (nn_count > self.config.query_nn_k)
+                # pred_mask = (nn_count >= mask_min_nn_count)
                 if query_sdf:
                     if self.config.weighted_first:
                         batch_sdf = torch.zeros(batch_size, device=self.device) 
@@ -106,6 +110,8 @@ class Mesher():
                     # predict the sdf with the feature, only do for the unmasked part (not in the unknown freespace)
                     if batch_geo_feature[pred_mask].shape[0] > 0:
                         batch_sdf[pred_mask] = self.geo_decoder.sdf(batch_geo_feature[pred_mask], batch_coord[pred_mask]) 
+                        assert torch.isnan(batch_geo_feature[pred_mask]).any() == False 
+                        assert torch.isnan(batch_sdf[pred_mask]).any() == False
                    
                     if not self.config.weighted_first:
                         # batch_sdf = torch.sum(batch_sdf * weight_knn, dim=1).squeeze(1)

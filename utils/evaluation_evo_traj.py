@@ -11,10 +11,19 @@ import matplotlib.pyplot as plt
 # traj_est_file = 'experiments/history/corrected-initial_guess-deskewing-pgo-test_ros_2024-06-26_13-37-37/odom_poses__tum.txt'
 # traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv'
 
-# Katzensee Dataset
+# --- Katzensee Dataset
 traj_est_file = 'experiments/history/asl_dataset/katzensee pinslam corrected-poses saved test_ros_2024-08-19_10-39-09/slam_poses__tum.txt'
 # traj_est_file = 'experiments/history/asl_dataset/tatzensee-tanh-attention-no dropout-test_ros_2024-08-20_19-05-00/slam_poses__tum.txt'
 traj_est_file = 'experiments/test_ros_2024-08-23_08-58-19/slam_poses__tum.txt'
+
+# - mapper iter 50; eikonal loss downsample 1
+# traj_est_file = 'experiments/history/asl_dataset/mapping-iter-50/attention-mapper iter 50/slam_poses__tum.txt' # ours- mapper iter 50; eikonal loss downsample 1
+# traj_est_file ='experiments/history/asl_dataset/mapping-iter-50/pin-slam- mapping 50- ekional 1 -test_ros_2024-08-28_17-42-15/slam_poses__tum_correctedts.txt' # pin-slam
+
+# - mesh comparison (pinslam v.s. our stable version)
+traj_est_file = 'experiments/history/asl_dataset/meshtesting-attention-stable-test_ros_2024-09-01_10-54-45/slam_poses__tum.txt'
+# traj_est_file = 'experiments/history/asl_dataset/katzensee pinslam corrected-poses saved test_ros_2024-08-19_10-39-09/slam_poses__tum_correctedts.txt'
+
 traj_ref_file = 'data/ASL/katzensee/gt-katzensee_s.csv'
 
 
@@ -91,3 +100,40 @@ fig_3.axes.append(ax)
 plot_collection.add_figure("traj (speed)", fig_3)
 
 plot_collection.show()
+
+
+
+
+
+
+# # ----------------------------------------
+# # correct ts
+
+# def replace_first_column(file1_path, file2_path, output_file_path):
+#     # Read the contents of both files
+#     with open(file1_path, 'r') as file1, open(file2_path, 'r') as file2:
+#         file1_lines = file1.readlines()
+#         file2_lines = file2.readlines()
+
+#     # Replace the first column of file1 with the first column of file2
+#     new_lines = []
+#     for line1, line2 in zip(file1_lines, file2_lines):
+#         line1_values = line1.split()
+#         line2_values = line2.split()
+
+#         # Replace the first value of line1 with the first value of line2
+#         line1_values[0] = line2_values[0]
+
+#         # Reconstruct the line and add to the new lines list
+#         new_lines.append(' '.join(line1_values) + '\n')
+
+#     # Write the modified content to the output file
+#     with open(output_file_path, 'w') as output_file:
+#         output_file.writelines(new_lines)
+
+# # Example usage
+# file1_path = 'experiments/history/asl_dataset/katzensee pinslam corrected-poses saved test_ros_2024-08-19_10-39-09/slam_poses__tum_correctedts.txt'  # Path to the first file
+# file2_path = 'experiments/history/asl_dataset/meshtesting-attention-stable-test_ros_2024-09-01_10-54-45/slam_poses__tum.txt'  # Path to the second file
+# output_file_path = 'experiments/history/asl_dataset/katzensee pinslam corrected-poses saved test_ros_2024-08-19_10-39-09/slam_poses__tum_correctedts.txt'  # Path to the output file where the result will be saved
+
+# replace_first_column(file1_path, file2_path, output_file_path)
