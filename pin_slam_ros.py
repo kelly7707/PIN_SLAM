@@ -206,6 +206,20 @@ class PINSLAMer:
         cur_mesh = self.mesher.recon_aabb_collections_mesh(chunks_aabb, self.mc_res_m, mesh_path, False, self.config.semantic_on, self.config.color_on, filter_isolated_mesh=True, mesh_min_nn=self.mesh_min_nn)    
 
         return EmptyResponse()
+    
+    def save_mesh(self):
+        # update map bbx
+        global_neural_pcd_down = self.neural_points.get_neural_points_o3d(query_global=True, random_down_ratio=23) # prime number
+        self.dataset.map_bbx = global_neural_pcd_down.get_axis_aligned_bounding_box()
+        
+        mc_cm_str = str(round(self.mc_res_m*1e2))
+        mesh_path = os.path.join(self.run_path, "mesh", 'mesh_frame_' + str(self.dataset.processed_frame) + "_" + mc_cm_str + "cm.ply")
+        
+        # figure out how to do it efficiently
+        aabb = global_neural_pcd_down.get_axis_aligned_bounding_box()
+        chunks_aabb = split_chunks(global_neural_pcd_down, aabb, self.mc_res_m*300) # reconstruct in chunks
+        cur_mesh = self.mesher.recon_aabb_collections_mesh(chunks_aabb, self.mc_res_m, mesh_path, False, self.config.semantic_on, self.config.color_on, filter_isolated_mesh=True, mesh_min_nn=self.mesh_min_nn)    
+
 
     def process_lidar_imu(self, lidar_msg):
         self.lidar_frame_count += 1
@@ -369,6 +383,10 @@ class PINSLAMer:
 
         T6 = get_time()
 
+        if self.config.save_mesh:
+            if self.dataset.processed_frame > 0 & self.dataset.processed_frame % 300 == 1:
+                self.save_mesh()
+        
         # publishing
         self.publish_msg(lidar_msg)
 
@@ -421,6 +439,9 @@ class PINSLAMer:
             self.pgm.write_g2o(os.path.join(self.run_path, "final_pose_graph.g2o"))
             self.pgm.plot_loops(os.path.join(self.run_path, "loop_plot.png"), vis_now=False)      
 
+        if self.config.save_mesh:
+            self.save_mesh()
+        
         if terminate:
             self.neural_points.recreate_hash(None, None, False, False) # merge the final neural point map
             self.neural_points.prune_map(self.config.max_prune_certainty) # prune uncertain points for the final output 
