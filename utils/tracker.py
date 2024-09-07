@@ -43,34 +43,34 @@ class Tracker():
                  source_colors=None, source_normals=None, 
                  source_semantics=None, source_sdf=None, 
                  cur_ts = None, loop_reg: bool = False, vis_result: bool = False): 
-
+        # given source_points & init_pose
         self.geo_decoder.eval()
         
         if init_pose is None:
             T = torch.eye(4, dtype=torch.float64, device=self.device)
-        else:
-            T = init_pose  # to local frame
+        else: 
+            T = init_pose  # default, to local frame
 
         cov_mat = None
 
-        min_grad_norm = self.config.reg_min_grad_norm # should be smaller than 1
-        max_grad_norm = self.config.reg_max_grad_norm # should be larger than 1
+        min_grad_norm = self.config.reg_min_grad_norm # should be smaller than 1 (default 0.5)
+        max_grad_norm = self.config.reg_max_grad_norm # should be larger than 1 (default 2)
         if self.config.reg_GM_dist_m > 0:
-            cur_GM_dist_m = self.config.reg_GM_dist_m
+            cur_GM_dist_m = self.config.reg_GM_dist_m # default 0.5
         else:
             cur_GM_dist_m = None
         if self.config.reg_GM_grad > 0:
-            cur_GM_grad = self.config.reg_GM_grad 
+            cur_GM_grad = self.config.reg_GM_grad  # default 0.2
         else:
             cur_GM_grad = None
-        lm_lambda = self.config.reg_lm_lambda
+        lm_lambda = self.config.reg_lm_lambda # default 1e-4
         iter_n = self.config.reg_iter_n
-        term_thre_deg = self.config.reg_term_thre_deg
-        term_thre_m = self.config.reg_term_thre_m
+        term_thre_deg = self.config.reg_term_thre_deg # default 0.01
+        term_thre_m = self.config.reg_term_thre_m # default 5e-4
         
-        max_valid_final_sdf_residual_cm = self.config.surface_sample_range_m * 0.5 * 100.0
+        max_valid_final_sdf_residual_cm = self.config.surface_sample_range_m * 0.5 * 100.0  # default 15
         min_valid_ratio = 0.2
-        if loop_reg: # also can try to further decrease the source point cloud resolution
+        if loop_reg: # [off] also can try to further decrease the source point cloud resolution
             max_valid_final_sdf_residual_cm = self.config.surface_sample_range_m * 0.6 * 100.0
             min_valid_ratio = 0.15
 
@@ -92,7 +92,7 @@ class Tracker():
             print("# Source point for registeration :", source_point_count)
 
         if source_sdf is None: # only use the surface samples (all zero)
-            source_sdf = torch.zeros(source_point_count, device=self.device)
+            source_sdf = torch.zeros(source_point_count, device=self.device) # [default]
 
         for i in tqdm(range(iter_n), disable = self.silence):
 
@@ -103,7 +103,7 @@ class Tracker():
             T02 = get_time()
                     
             # progressive strict
-            if progressive_stricter:
+            if progressive_stricter: #[off]
                 cur_GM_grad -= 0.001
                 min_grad_norm += 0.001
                 max_grad_norm -= 0.001
@@ -197,7 +197,7 @@ class Tracker():
         sample_count = coord.shape[0]
         iter_n = math.ceil(sample_count/bs)
 
-        if query_sdf:
+        if query_sdf:#[]
             sdf_pred = torch.zeros(sample_count, device = coord.device)
             sdf_std = torch.zeros(sample_count, device = coord.device)
         else: 
@@ -211,11 +211,11 @@ class Tracker():
             color_pred = torch.zeros((sample_count, self.config.color_channel), device = coord.device)
         else:
             color_pred = None
-        if query_mask:
+        if query_mask:#[]
             mc_mask = torch.zeros(sample_count, device = coord.device, dtype = torch.bool)
         else:
             mc_mask = None
-        if query_sdf_grad:
+        if query_sdf_grad: #[]
             sdf_grad = torch.zeros((sample_count, 3), device = coord.device)
         else:
             sdf_grad = None
@@ -223,7 +223,7 @@ class Tracker():
             color_grad = torch.zeros((sample_count, self.config.color_channel, 3), device = coord.device)
         else:
             color_grad = None
-        if query_certainty:
+        if query_certainty: #[]
             certainty = torch.zeros(sample_count, device = coord.device)
         else:
             certainty = None
@@ -233,7 +233,7 @@ class Tracker():
             tail = min((n+1)*bs, sample_count)
             batch_coord = coord[head:tail, :]
             if query_sdf_grad or query_color_grad:
-                # TODO: uncomment this line in original code to check if it's necessary -- it is necessary
+                # uncomment this line in original code to check if it's necessary -- it is necessary
                 batch_coord.requires_grad_(True) #tracking default # used within get_gradient (calculate analytical gradient (output wrt input), so requires_grad of input is needed)
 
             batch_geo_feature, batch_color_feature, weight_knn, nn_count, batch_certainty = self.neural_points.query_feature(batch_coord, 
@@ -244,7 +244,7 @@ class Tracker():
             # print(weight_knn)
             if query_sdf:
                 batch_sdf = self.geo_decoder.sdf(batch_geo_feature, batch_coord)
-                if not self.config.weighted_first: 
+                if not self.config.weighted_first: #[]
                     # # batch_sdf = torch.sum(batch_sdf * weight_knn, dim=1).squeeze(1) 
                     # # print(batch_sdf.squeeze(-1))
 
@@ -257,7 +257,7 @@ class Tracker():
                     batch_sdf = batch_sdf.squeeze(1)
                     # sdf_std[head:tail] = 0  #TODO: could not be used
 
-                if query_sdf_grad:
+                if query_sdf_grad:#[]
                     batch_sdf_grad = get_gradient(batch_coord, batch_sdf) # use analytical gradient in tracking
                     sdf_grad[head:tail, :] = batch_sdf_grad.detach()
                 sdf_pred[head:tail] = batch_sdf.detach()
@@ -287,6 +287,12 @@ class Tracker():
         sdf_pred_min = sdf_pred.min()
         sdf_pred_max = sdf_pred.max()
         sdf_pred_median = sdf_pred.median()
+        # sdf_grad
+        sdf_grad_mean = sdf_grad.norm(dim=-1).mean()
+        sdf_grad_std = sdf_grad.norm(dim=-1).std()
+        sdf_grad_min = sdf_grad.norm(dim=-1).min()
+        sdf_grad_max = sdf_grad.norm(dim=-1).max()
+        sdf_grad_median = sdf_grad.norm(dim=-1).median()
 
         if self.config.wandb_vis_on:
             wandb_log_content = {'sdf_monitor/sdf_pred_mean': sdf_pred_mean,
@@ -294,6 +300,11 @@ class Tracker():
                                 'sdf_monitor/sdf_pred_min': sdf_pred_min,
                                 'sdf_monitor/sdf_pred_max': sdf_pred_max,
                                 'sdf_monitor/sdf_pred_median': sdf_pred_median}
+            wandb_log_content.update({'sdf_grad_monitor/sdf_grad_mean': sdf_grad_mean,
+                                    'sdf_grad_monitor/sdf_grad_std': sdf_grad_std,
+                                    'sdf_grad_monitor/sdf_grad_min': sdf_grad_min,
+                                    'sdf_grad_monitor/sdf_grad_max': sdf_grad_max,
+                                    'sdf_grad_monitor/sdf_grad_median': sdf_grad_median})
             wandb.log(wandb_log_content)
         
         return sdf_pred, sdf_grad, color_pred, color_grad, sem_pred, mc_mask, certainty, sdf_std                   
@@ -316,7 +327,7 @@ class Tracker():
 
         grad_norm = sdf_grad.norm(dim=-1, keepdim=True).squeeze() # unit: m
 
-        grad_unit = sdf_grad/grad_norm.unsqueeze(-1)  
+        grad_unit = sdf_grad/grad_norm.unsqueeze(-1)  # TODO: contains nan
 
         # normal_consistency = torch.abs((normals * grad_unit).sum(dim=1))
         
@@ -350,10 +361,10 @@ class Tracker():
         # sdf_std = sdf_std[valid_idx]
         # std_mean = sdf_std.mean()
 
-        valid_grad_unit = grad_unit[valid_idx]
+        valid_grad_unit = grad_unit[valid_idx] # filter nan out
         invalid_grad_unit = grad_unit[~valid_idx]
 
-        if normals is not None:
+        if normals is not None: #[off]
             valid_normals = normals[valid_idx]
             
         grad_anomaly = grad_norm - 1. # relative to 1

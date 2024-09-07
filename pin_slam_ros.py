@@ -395,8 +395,8 @@ class PINSLAMer:
         T5 = get_time()
 
         # for the first frame, we need more iterations to do the initialization (warm-up)
-        # cur_iter_num = int(self.config.iters * self.config.init_iter_ratio * 4/3) if self.dataset.processed_frame == 0 else self.config.iters # 15
-        cur_iter_num = 600 if self.dataset.processed_frame == 0 else self.config.iters # 15
+        cur_iter_num = int(self.config.iters * self.config.init_iter_ratio) if self.dataset.processed_frame == 0 else self.config.iters # 15
+        # cur_iter_num = 800 if self.dataset.processed_frame == 0 else self.config.iters # 15
         if self.config.adaptive_mode and self.dataset.stop_status:
             cur_iter_num = max(1, cur_iter_num-10)
         if self.dataset.processed_frame == self.config.freeze_after_frame: # freeze the decoder after certain frame (default 40)
@@ -481,7 +481,7 @@ class PINSLAMer:
             
         
         if self.config.save_mesh:
-            if self.dataset.processed_frame>0 and self.dataset.processed_frame % 70 == 0:
+            if self.dataset.processed_frame>0 and self.dataset.processed_frame % 200 == 0:
                 self.save_mesh()
         
         
@@ -896,19 +896,19 @@ class PINSLAMer:
 if __name__ == "__main__":
 
     config_path = rospy.get_param('~config_path', "./config/lidar_slam/run_ncd_128.yaml")
-    # # -- New college dataset
-    # point_cloud_topic = rospy.get_param('~point_cloud_topic', "/os_cloud_node/points")
-    # imu_topic = rospy.get_param('~imu_topic', "/os_cloud_node/imu")
-    # ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
-
-    # bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
-    
-    # -- ASL
-    point_cloud_topic = rospy.get_param('~point_cloud_topic', "/ouster/points")
-    imu_topic = rospy.get_param('~imu_topic', "/ouster/imu")
+    # -- New college dataset
+    point_cloud_topic = rospy.get_param('~point_cloud_topic', "/os_cloud_node/points")
+    imu_topic = rospy.get_param('~imu_topic', "/os_cloud_node/imu")
     ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
+
+    bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
+    
+    # # -- ASL
+    # point_cloud_topic = rospy.get_param('~point_cloud_topic', "/ouster/points")
+    # imu_topic = rospy.get_param('~imu_topic', "/ouster/imu")
+    # ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
     # bag_path = 'data/ASL/field_s/2023-08-09-19-05-05-field_s.bag'
-    bag_path = 'data/ASL/katzensee/2023-08-21-10-20-22-katzensee_s.bag'
+    # # bag_path = 'data/ASL/katzensee/2023-08-21-10-20-22-katzensee_s.bag'
     
     
     # If you would like to directly run the python script without including it in a ROS package

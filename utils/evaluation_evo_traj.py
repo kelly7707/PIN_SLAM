@@ -20,9 +20,13 @@ traj_est_file = 'experiments/test_ros_2024-08-23_08-58-19/slam_poses__tum.txt'
 # traj_est_file = 'experiments/history/asl_dataset/mapping-iter-50/attention-mapper iter 50/slam_poses__tum.txt' # ours- mapper iter 50; eikonal loss downsample 1
 # traj_est_file ='experiments/history/asl_dataset/mapping-iter-50/pin-slam- mapping 50- ekional 1 -test_ros_2024-08-28_17-42-15/slam_poses__tum_correctedts.txt' # pin-slam
 
-# - mesh comparison (pinslam v.s. our stable version)
-traj_est_file = 'experiments/history/asl_dataset/meshtesting-attention-stable-test_ros_2024-09-01_10-54-45/slam_poses__tum.txt'
+# - mesh comparison (pinslam v.s. our stable version) (wrong pgo!!)
+# traj_est_file = 'experiments/history/asl_dataset/meshtesting-attention-stable-test_ros_2024-09-01_10-54-45/slam_poses__tum.txt'
 # traj_est_file = 'experiments/history/asl_dataset/katzensee pinslam corrected-poses saved test_ros_2024-08-19_10-39-09/slam_poses__tum_correctedts.txt'
+# - corrected pgo, mesh compare
+# traj_est_file = 'experiments/history/asl_dataset/corrected_pgo-stable-test_ros_2024-09-04_19-13-32/slam_poses__tum.txt' # our stable
+# traj_est_file = 'experiments/history/asl_dataset/corrected_saved_pgoposes-drooput02-test_ros_2024-09-04_17-42-00/slam_poses__tum.txt' # our dropout 0.2, stable, but loss high
+traj_est_file = 'experiments/history/asl_dataset/corrected_pgo_poses-pinslam-test_ros_2024-09-04_22-58-16/slam_poses__tum_correctedts.txt' # pinslam
 
 traj_ref_file = 'data/ASL/katzensee/gt-katzensee_s.csv'
 
@@ -132,8 +136,8 @@ plot_collection.show()
 #         output_file.writelines(new_lines)
 
 # # Example usage
-# file1_path = 'experiments/history/asl_dataset/katzensee pinslam corrected-poses saved test_ros_2024-08-19_10-39-09/slam_poses__tum_correctedts.txt'  # Path to the first file
-# file2_path = 'experiments/history/asl_dataset/meshtesting-attention-stable-test_ros_2024-09-01_10-54-45/slam_poses__tum.txt'  # Path to the second file
-# output_file_path = 'experiments/history/asl_dataset/katzensee pinslam corrected-poses saved test_ros_2024-08-19_10-39-09/slam_poses__tum_correctedts.txt'  # Path to the output file where the result will be saved
+# file1_path = 'experiments/history/asl_dataset/corrected_pgo_poses-pinslam-test_ros_2024-09-04_22-58-16/slam_poses__tum_correctedts.txt'  # Path to the first file
+# file2_path = 'experiments/history/asl_dataset/corrected_pgo-stable-test_ros_2024-09-04_19-13-32/slam_poses__tum.txt'  # Path to the second file
+# output_file_path = 'experiments/history/asl_dataset/corrected_pgo_poses-pinslam-test_ros_2024-09-04_22-58-16/slam_poses__tum_correctedts.txt'  # Path to the output file where the result will be saved
 
 # replace_first_column(file1_path, file2_path, output_file_path)
