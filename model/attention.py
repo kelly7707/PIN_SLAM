@@ -63,16 +63,16 @@ class Attention(nn.Module):
         self.key_layer = nn.Linear(kv_dim, kv_dim, bias_on)
 
         # self.value_layer = nn.Sequential(
-        #     nn.Linear(kv_dim, kv_dim, bias_on),
+        #     nn.Linear(input_layer_count, kv_dim, bias_on), # feature_dim
         #     nn.LayerNorm(kv_dim), # LN2
         #     nn.ReLU(inplace=True)
         #     # nn.Tanh()
         # )
         # self.key_layer = nn.Sequential(
-        #     nn.Linear(kv_dim, kv_dim, bias_on),
+        #     nn.Linear(input_layer_count, kv_dim, bias_on), #position_dim
         #     nn.LayerNorm(kv_dim), # LN3
-        #     nn.ReLU(inplace=True)
-        #     # nn.Tanh()
+        #     # nn.ReLU(inplace=True)
+        #     nn.Tanh()
         # )
 
         # -- Query MLP layers
@@ -124,25 +124,25 @@ class Attention(nn.Module):
     # unit is already m
     def sdf(self, features, query_features=None):
         assert features.shape[0] == query_features.shape[0]
-        # zero_rows_key = (features == 0).all(dim=-1).any()
-        # zero_rows_value = (query_features == 0).all(dim=-1).any()
+        # # zero_rows_key = (features == 0).all(dim=-1).any()
+        # # zero_rows_value = (query_features == 0).all(dim=-1).any()
 
-        # print("Zero rows in key tensor:", zero_rows_key.any())
-        # print("Zero rows in value tensor:", zero_rows_value.any())
+        # # print("Zero rows in key tensor:", zero_rows_key.any())
+        # # print("Zero rows in value tensor:", zero_rows_value.any())
 
-        # query_features = F.layer_norm(query_features, [query_features.shape[1]])
+        # # query_features = F.layer_norm(query_features, [query_features.shape[1]])
 
         shared_output = self.shared_layers(features)
         value = self.value_layer(shared_output)
         key = self.key_layer(shared_output)
 
-        # value = self.value_layer(features)
-        # key = self.key_layer(features) #.clone().detach()
+        # value = self.value_layer(features) # features[:,:,:8]
+        # key = self.key_layer(features) #.clone().detach() # features[:,:,-3:]
 
         query = self.query_layer(query_features.clone().detach()).unsqueeze(1)  #.clone().detach()
         
         assert (query_features.isnan().any() and features.isnan().any() and value.isnan().any() and key.isnan().any() and query.isnan().any()) == False        
-        assert ((query == 0).all(dim=-1).sum(dim=-1).sum().item() == 0) and ((value == 0).all(dim=-1).sum(dim=-1).sum().item() == 0) and ((key == 0).all(dim=-1).sum(dim=-1).sum().item() == 0)  # and ((query_features == 0).all(dim=-1).sum(dim=-1).sum().item() == 0) and ((features == 0).all(dim=-1).sum(dim=-1).sum().item() == 0)
+        # assert ((query == 0).all(dim=-1).sum(dim=-1).sum().item() == 0) and ((value == 0).all(dim=-1).sum(dim=-1).sum().item() == 0) and ((key == 0).all(dim=-1).sum(dim=-1).sum().item() == 0)  # and ((query_features == 0).all(dim=-1).sum(dim=-1).sum().item() == 0) and ((features == 0).all(dim=-1).sum(dim=-1).sum().item() == 0)
         attn_output = self.multihead_attn(query, key, value, need_weights=False) # ignore attn_output_weights
 
         # # Apply LayerNorm after multihead attention
@@ -151,11 +151,6 @@ class Attention(nn.Module):
 
         out = self.lout(attn_output[0]).squeeze(1)
         out *= self.sdf_scale
-        # linear (feature_dim -> hidden_dim)
-        # relu
-        # linear (hidden_dim -> hidden_dim)
-        # relu
-        # linear (hidden_dim -> 1)
 
         return out
     
