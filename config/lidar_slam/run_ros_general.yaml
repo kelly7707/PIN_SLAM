@@ -40,7 +40,7 @@ continual:
 tracker:
   source_vox_down_m: 0.8
   iter_n: 50 #50
-  lm_lambda: 1e-3 # 1e-2 work
+  lm_lambda: 1e-4 # 1e-2 work
 imu_pgo: True
 # pgo:
 #   map_context: True
