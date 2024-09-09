@@ -10,10 +10,20 @@ import matplotlib.pyplot as plt
 # traj_est_file = 'experiments/history/tanh-new college-no dropout-test_ros_2024-08-22_22-16-16/slam_poses__tum.txt'
 # traj_est_file = 'experiments/history/corrected-initial_guess-deskewing-pgo-test_ros_2024-06-26_13-37-37/odom_poses__tum.txt'
 
-# -- unique model testing
-traj_est_file = 'experiments/history/tempororily_unique_model/ours-newcollege_test_ros_2024-09-07_11-48-24/slam_poses__tum.txt'
+# # -- unique model testing
+# traj_est_file = 'experiments/history/tempororily_unique_model/ours-newcollege_test_ros_2024-09-07_11-48-24/slam_poses__tum.txt'
 # traj_est_file = 'experiments/history/tempororily_unique_model/newcollege-pgocorrected-pin-slam_test_ros_2024-09-07_15-54-36/slam_poses__tum_correctedts.txt'
+traj_est_file = 'experiments/test_ros_2024-09-09_10-15-25/slam_poses__tum.txt'
+
 traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv'
+
+
+# # ------------------ new college_medium dataset -------------------
+# traj_est_file = 'experiments/history/tempororily_unique_model/newcollege_medium-KQ-tanh_V-relu_test_ros_2024-09-08_17-53-19/slam_poses__tum.txt' # just play around
+# traj_est_file = 'experiments/history/tempororily_unique_model/newcollege_medium-ours-test_ros_2024-09-08_21-07-51/slam_poses__tum.txt'
+# traj_est_file = 'experiments/history/tempororily_unique_model/newcolmedium-pinslam-test_ros_2024-09-08_23-17-28/slam_poses__tum_correctedts.txt'
+
+# traj_ref_file = 'data/Newer_College_Dataset/medium/gt-nc-quad-medium.csv'
 
 # ------------------ Katzensee Dataset-------------------
 # traj_est_file = 'experiments/history/asl_dataset/katzensee pinslam corrected-poses saved test_ros_2024-08-19_10-39-09/slam_poses__tum.txt'
@@ -145,8 +155,8 @@ plot_collection.show()
 #         output_file.writelines(new_lines)
 
 # # Example usage
-# file1_path = 'experiments/history/tempororily_unique_model/newcollege-pgocorrected-pin-slam_test_ros_2024-09-07_15-54-36/slam_poses__tum_correctedts.txt'  # Path to the first file
-# file2_path = 'experiments/history/tempororily_unique_model/ours-newcollege_test_ros_2024-09-07_11-48-24/slam_poses__tum.txt'  # Path to the second file
-# output_file_path = 'experiments/history/tempororily_unique_model/newcollege-pgocorrected-pin-slam_test_ros_2024-09-07_15-54-36/slam_poses__tum_correctedts.txt'  # Path to the output file where the result will be saved
+# file1_path = 'experiments/history/tempororily_unique_model/newcolmedium-pinslam-test_ros_2024-09-08_23-17-28/slam_poses__tum_correctedts.txt'  # Path to the first file
+# file2_path = 'experiments/history/tempororily_unique_model/newcollege_medium-ours-test_ros_2024-09-08_21-07-51/slam_poses__tum.txt'  # Path to the second file
+# output_file_path = 'experiments/history/tempororily_unique_model/newcolmedium-pinslam-test_ros_2024-09-08_23-17-28/slam_poses__tum_correctedts.txt'  # Path to the output file where the result will be saved
 
 # replace_first_column(file1_path, file2_path, output_file_path)
