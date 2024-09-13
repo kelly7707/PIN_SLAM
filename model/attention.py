@@ -63,13 +63,13 @@ class Attention(nn.Module):
         self.key_layer = nn.Linear(kv_dim, kv_dim, bias_on)
 
         # self.value_layer = nn.Sequential(
-        #     nn.Linear(input_layer_count, kv_dim, bias_on), # feature_dim
-        #     nn.LayerNorm(kv_dim), # LN2
+        #     nn.Linear(feature_dim, kv_dim, bias_on), # feature_dim # input_layer_count
+        #     nn.LayerNorm(kv_dim), # LN2 
         #     nn.ReLU(inplace=True)
         #     # nn.Tanh()
         # )
         # self.key_layer = nn.Sequential(
-        #     nn.Linear(input_layer_count, kv_dim, bias_on), #position_dim
+        #     nn.Linear(position_dim, kv_dim, bias_on), #position_dim # input_layer_count
         #     nn.LayerNorm(kv_dim), # LN3
         #     # nn.ReLU(inplace=True)
         #     nn.Tanh()
@@ -123,6 +123,8 @@ class Attention(nn.Module):
     # predict the sdf (opposite sign to the actual sdf)
     # unit is already m
     def sdf(self, features, query_features=None):
+        # zeros_tensor = torch.zeros_like(query_features)
+
         assert features.shape[0] == query_features.shape[0]
         # # zero_rows_key = (features == 0).all(dim=-1).any()
         # # zero_rows_value = (query_features == 0).all(dim=-1).any()
@@ -135,14 +137,16 @@ class Attention(nn.Module):
         shared_output = self.shared_layers(features)
         value = self.value_layer(shared_output)
         key = self.key_layer(shared_output)
-
-        # value = self.value_layer(features) # features[:,:,:8]
-        # key = self.key_layer(features) #.clone().detach() # features[:,:,-3:]
+        # value = self.value_layer(features[:,:,:8]) # features[:,:,:8]
+        # key = self.key_layer(features[:,:,-3:]) #.clone().detach() # features[:,:,-3:]
 
         query = self.query_layer(query_features.clone().detach()).unsqueeze(1)  #.clone().detach()
+        # query = self.query_layer(zeros_tensor).unsqueeze(1)
         
-        assert (query_features.isnan().any() and features.isnan().any() and value.isnan().any() and key.isnan().any() and query.isnan().any()) == False        
-        # assert ((query == 0).all(dim=-1).sum(dim=-1).sum().item() == 0) and ((value == 0).all(dim=-1).sum(dim=-1).sum().item() == 0) and ((key == 0).all(dim=-1).sum(dim=-1).sum().item() == 0)  # and ((query_features == 0).all(dim=-1).sum(dim=-1).sum().item() == 0) and ((features == 0).all(dim=-1).sum(dim=-1).sum().item() == 0)
+        # assert (query_features.isnan().any() and features.isnan().any() and value.isnan().any() and key.isnan().any() and query.isnan().any()) == False        
+        # # assert ((query == 0).all(dim=-1).sum(dim=-1).sum().item() == 0) and ((value == 0).all(dim=-1).sum(dim=-1).sum().item() == 0) and ((key == 0).all(dim=-1).sum(dim=-1).sum().item() == 0)  # and ((query_features == 0).all(dim=-1).sum(dim=-1).sum().item() == 0) and ((features == 0).all(dim=-1).sum(dim=-1).sum().item() == 0)
+        
+        
         attn_output = self.multihead_attn(query, key, value, need_weights=False) # ignore attn_output_weights
 
         # # Apply LayerNorm after multihead attention

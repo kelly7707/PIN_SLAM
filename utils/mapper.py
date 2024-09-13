@@ -231,7 +231,7 @@ class Mapper():
             self.global_coord_pool = transform_batch_torch(self.coord_pool, self.used_poses[self.time_pool]) # very slow here [if ba is not done, then you don't need to transform the whole data pool]
             self.ba_done_flag = False
 
-        else: # used when ba is not enabled 
+        else: # (default)used when ba is not enabled 
             global_coord = transform_torch(coord, cur_pose_torch) 
             self.global_coord_pool = torch.cat((self.global_coord_pool, global_coord), 0)   
             # why so slow  
@@ -487,8 +487,8 @@ class Mapper():
             sdf_pred = self.geo_mlp.sdf(geo_feature, coord) # predict the scaled sdf with the feature # [N, K, 1]
             sdf_pred = sdf_pred.squeeze(1)
 
-            # -- test(doesn't too importance) monitor the statistics
-            self.monitor(sdf_pred, sdf_label)
+            # # -- test(not too importance) monitor the statistics
+            # self.monitor(sdf_pred, sdf_label)
             
 
 

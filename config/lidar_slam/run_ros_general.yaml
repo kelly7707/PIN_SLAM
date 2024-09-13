@@ -20,7 +20,7 @@ neuralpoints:
   weighted_first: False
   voxel_size_m: 0.4 #resolution
   feature_dim: 8 # 8 
-  query_nn_k: 6
+  query_nn_k: 9 # 6
   search_alpha: 0.5 # increase when you want to be more robust to agressive motions
 training:
   attention_mode: True
@@ -40,7 +40,7 @@ continual:
 tracker:
   source_vox_down_m: 0.8
   iter_n: 50 #50
-  lm_lambda: 1e-4 # 1e-2 work
+  lm_lambda: 1e-3 # 1e-2 work
 imu_pgo: True
 # pgo:
 #   map_context: True

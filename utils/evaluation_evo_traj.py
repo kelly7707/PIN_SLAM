@@ -13,17 +13,21 @@ import matplotlib.pyplot as plt
 # # -- unique model testing
 # traj_est_file = 'experiments/history/tempororily_unique_model/ours-newcollege_test_ros_2024-09-07_11-48-24/slam_poses__tum.txt'
 # traj_est_file = 'experiments/history/tempororily_unique_model/newcollege-pgocorrected-pin-slam_test_ros_2024-09-07_15-54-36/slam_poses__tum_correctedts.txt'
-traj_est_file = 'experiments/test_ros_2024-09-09_10-15-25/slam_poses__tum.txt'
+# traj_est_file = 'experiments/history/tempororily_unique_model/nce-ours-withsmallerlamda-test_ros_2024-09-09_10-15-25/slam_poses__tum.txt'
+# traj_est_file = 'experiments/history/tempororily_unique_model/nce-zeroquery-test_ros_2024-09-11_09-27-00/slam_poses__tum.txt'
 
-traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv'
-
+# traj_est_file = 'experiments/test_ros_2024-09-09_17-35-43/slam_poses__tum.txt' # with relu
+# # traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv' # ground truth in tum format
+# traj_ref_file = 'data/Newer_College_Dataset/transformed_gt-nc-quad-easy_TMU.csv'
 
 # # ------------------ new college_medium dataset -------------------
 # traj_est_file = 'experiments/history/tempororily_unique_model/newcollege_medium-KQ-tanh_V-relu_test_ros_2024-09-08_17-53-19/slam_poses__tum.txt' # just play around
 # traj_est_file = 'experiments/history/tempororily_unique_model/newcollege_medium-ours-test_ros_2024-09-08_21-07-51/slam_poses__tum.txt'
-# traj_est_file = 'experiments/history/tempororily_unique_model/newcolmedium-pinslam-test_ros_2024-09-08_23-17-28/slam_poses__tum_correctedts.txt'
+traj_est_file = 'experiments/history/tempororily_unique_model/newcolmedium-pinslam-test_ros_2024-09-08_23-17-28/slam_poses__tum_correctedts.txt'
 
+# traj_est_file = 'experiments/history/tempororily_unique_model/ncm-ours-smalllamda-test_ros_2024-09-09_15-56-52/slam_poses__tum.txt'
 # traj_ref_file = 'data/Newer_College_Dataset/medium/gt-nc-quad-medium.csv'
+traj_ref_file = 'data/Newer_College_Dataset/transformed_gt-nc-quad-medium.csv'
 
 # ------------------ Katzensee Dataset-------------------
 # traj_est_file = 'experiments/history/asl_dataset/katzensee pinslam corrected-poses saved test_ros_2024-08-19_10-39-09/slam_poses__tum.txt'
@@ -46,8 +50,8 @@ traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv'
 # traj_est_file = 'experiments/history/tempororily_unique_model/12geo_feature-ours-test_ros_2024-09-07_21-20-58/slam_poses__tum.txt'
 
 # traj_est_file = 'experiments/history/asl_dataset/corrected_pgo_poses-pinslam-test_ros_2024-09-04_22-58-16/slam_poses__tum_correctedts.txt' # pinslam
-# traj_ref_file = 'data/ASL/katzensee/gt-katzensee_s.csv'
-
+# # traj_ref_file = 'data/ASL/katzensee/gt-katzensee_s.csv'
+# traj_ref_file = 'data/ASL/katzensee/transformed_gt-katzensee_s.csv'
 
 # ------------------ evaluate -------------------
 traj_est = file_interface.read_tum_trajectory_file(traj_est_file) # -> PoseTrajectory3D
@@ -58,7 +62,7 @@ print(traj_est.num_poses)
 # # traj_ref_downsample.downsample(traj_est.num_poses)
 traj_ref_downsample, traj_est_aligned_scaled = sync.associate_trajectories(traj_ref, traj_est)
 # traj_est_aligned_scaled = copy.deepcopy(traj_est)
-traj_est_aligned_scaled.align(traj_ref_downsample, correct_scale=False) # TODO s?
+traj_est_aligned_scaled.align(traj_ref_downsample, correct_scale=False) # do not align scale
 # # traj_est_aligned_scaled = trajectory.align_trajectory(traj_est_aligned_scaled, traj_ref_downsample, correct_scale=False)
 
 

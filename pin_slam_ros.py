@@ -395,8 +395,8 @@ class PINSLAMer:
         T5 = get_time()
 
         # for the first frame, we need more iterations to do the initialization (warm-up)
-        cur_iter_num = int(self.config.iters * self.config.init_iter_ratio) if self.dataset.processed_frame == 0 else self.config.iters # 15
-        # cur_iter_num = 800 if self.dataset.processed_frame == 0 else self.config.iters # 15
+        # cur_iter_num = int(self.config.iters * self.config.init_iter_ratio) if self.dataset.processed_frame == 0 else self.config.iters # 15
+        cur_iter_num = 600 if self.dataset.processed_frame == 0 else self.config.iters # 15
         if self.config.adaptive_mode and self.dataset.stop_status:
             cur_iter_num = max(1, cur_iter_num-10)
         if self.dataset.processed_frame == self.config.freeze_after_frame: # freeze the decoder after certain frame (default 40)
@@ -901,8 +901,8 @@ if __name__ == "__main__":
     imu_topic = rospy.get_param('~imu_topic', "/os_cloud_node/imu")
     ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
 
-    # bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
-    bag_path = 'data/Newer_College_Dataset/medium/2021-07-01-11-31-35_0-quad-medium.bag'
+    bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
+    # bag_path = 'data/Newer_College_Dataset/medium/2021-07-01-11-31-35_0-quad-medium.bag'
     
     # # -- ASL
     # point_cloud_topic = rospy.get_param('~point_cloud_topic', "/ouster/points")
