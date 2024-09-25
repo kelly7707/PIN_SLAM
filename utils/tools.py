@@ -66,10 +66,12 @@ def setup_experiment(config: Config, argv = None, debug_mode: bool = False):
             # set up wandb
             setup_wandb()
             wandb.init(project="pin-slam", config=vars(config), dir=run_path) # your own worksapce
-            wandb.run.name = run_name   
+            wandb.run.name = "new/recent/all history-1500/3000/.- nce -" + run_name
             # Set a description for the run
-            wandb.run.notes = "|*increase neighbors num --> to solve overfitting *| *9 neighbors* | /nce / *(manually set)600 warm-up*; no gradient.clip; 3 coord query -> 32 (linear Norm tanh), (8+3) geo feature+ relative distance -> 32 (layernorm+ tanh); MHA(kv_bias_on + 0.2 dropout, add_bias_kv True); decoder(32->1)|(eikonal loss)gradient_decimation = 1|lr=0.01,1e-3 , no weight decay, adam|**mapper iter=15**, tracker iter =50 | *50 freezing decoder*|reg_lm_lambda= 1e-3 | LiDAR + IMU, PGO"
-                # asl katzensee_s // new college
+            wandb.run.notes = "|*training sample new/recent/all_history-1500/3000/.* | /nce /| *6 neighbors*, *calculated warm-up*; no gradient.clip; 3 coord query -> 32 (linear Norm tanh), *(8+3) geo feature+ relative distance -- K|V* -> 32 (layernorm+ tanh); MHA(kv_bias_on + 0.2 dropout, add_bias_kv True); decoder(32->1)|(eikonal loss)gradient_decimation = 1|lr=0.01,1e-3 , no weight decay, adam|*mapper iter=15*, tracker iter =50 | **40 freezing decoder**|reg_lm_lambda= 1e-3 | LiDAR + IMU, PGO"
+                # asl katzensee_s // new college nce
+                # *training sample index_new=2000,index_recent=2000,index_all = 7000* || increase recent index ratio 2000/2000/7000 || new/recent/history-1500/2000/6500
+                # unfreeze 500-50- ncm -
 
         # config file and reproducable shell script
         if argv is not None:

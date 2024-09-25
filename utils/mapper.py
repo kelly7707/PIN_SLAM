@@ -22,6 +22,7 @@ from utils.tools import setup_optimizer, get_time, get_gradient, transform_torch
 from utils.loss import *
 from model.neural_points import NeuralPoints
 from model.decoder import Decoder
+from collections import deque
 
 
 class Mapper():
@@ -64,6 +65,8 @@ class Mapper():
         self.ray_sample_count = 1 + config.surface_sample_n + config.free_behind_n + config.free_front_n # ~=7
 
         self.new_idx = None
+        # Initialize the deque with a maximum length of 4
+        self.new_idx_history = deque(maxlen=4)
 
         self.ba_done_flag = False
         self.train_less = False
@@ -172,6 +175,8 @@ class Mapper():
         if self.config.from_sample_points:
             if self.config.from_all_samples:
                 update_points = coord
+                
+                update_points = transform_torch(update_points, cur_pose_torch) # zjw: local -> global
             else: # default: close-to-surface samples
                 update_points = coord[torch.abs(sdf_label) < self.config.surface_sample_range_m * self.config.map_surface_ratio, :]
                 update_points = transform_torch(update_points, cur_pose_torch) # local -> global
@@ -230,7 +235,6 @@ class Mapper():
             # this may also cause some memory issue when the data pool is too large (5e7) # FIXME 
             self.global_coord_pool = transform_batch_torch(self.coord_pool, self.used_poses[self.time_pool]) # very slow here [if ba is not done, then you don't need to transform the whole data pool]
             self.ba_done_flag = False
-
         else: # (default)used when ba is not enabled 
             global_coord = transform_torch(coord, cur_pose_torch) 
             self.global_coord_pool = torch.cat((self.global_coord_pool, global_coord), 0)   
@@ -308,10 +312,13 @@ class Mapper():
 
             # use only the close-to-surface new samples
             self.new_idx = torch.where((cur_sample_certainty < self.config.new_certainty_thre) & 
-                                       (torch.abs(cur_label_filtered) < self.config.surface_sample_range_m * 3.))[0] 
+                                       (torch.abs(cur_label_filtered) < self.config.surface_sample_range_m * 3.))[0] #0.3*3 
                                        
             self.new_idx += (self.pool_sample_count - self.cur_sample_count) # new idx in the data pool
 
+            # Append the current 'self.new_idx' to the history (deque)
+            self.new_idx_history.append(self.new_idx)
+            
             new_sample_count = self.new_idx.shape[0]
             if self.config.adaptive_mode and new_sample_count / self.cur_sample_count < self.config.new_sample_ratio_thre:
                 self.train_less = True
@@ -337,13 +344,43 @@ class Mapper():
         if self.config.bs_new_sample > 0 and self.new_idx is not None and not self.lose_track and not self.dataset.stop_status: 
             # half, half for the history and current samples
             new_idx_count = self.new_idx.shape[0]
+
+            recent_idx_count = sum(tensor.numel() for tensor in self.new_idx_history) - new_idx_count
+            # print('------self.new_idx_history:', self.new_idx_history)
+            # recent_idx_count = 0
+
             if new_idx_count > 0:
-                bs_new = min(new_idx_count, self.config.bs_new_sample)
-                bs_history =  self.config.bs - bs_new
-                index_history = torch.randint(0, self.pool_sample_count, (bs_history,), device=self.device)
+                # print('------new_idx_count:', new_idx_count)
+                # print('------recent_idx_count:', recent_idx_count)
+                # print('------pool_sample_count', self.pool_sample_count)
+                bs_new = min(new_idx_count, self.config.bs_new_sample) # ,1500
+                if recent_idx_count > 0:
+                    bs_recent = min(3000, recent_idx_count)
+                    bs_history =  self.config.bs - bs_new - bs_recent # 5000
+                else:
+                    bs_history =  self.config.bs - bs_new # 10000-
+                
+                
                 index_new_batch = torch.randint(0, new_idx_count, (bs_new,), device=self.device)
                 index_new = self.new_idx[index_new_batch]
-                index = torch.cat((index_history, index_new), dim=0)
+
+                if recent_idx_count > 0:
+                    # index_history = torch.randint(0, self.pool_sample_count-recent_idx_count-new_idx_count, (bs_history,), device=self.device)
+                    index_history = torch.randint(0, self.pool_sample_count, (bs_history,), device=self.device)
+
+                    index_recent_batch = torch.randint(0, recent_idx_count, (bs_recent,), device=self.device)
+                    recent_idx = torch.cat(list(self.new_idx_history)[:-1], dim=0)
+                    index_recent = recent_idx[index_recent_batch]
+
+                    index = torch.cat((index_history, index_new, index_recent), dim=0)
+                    assert(index.isnan().any() == False)
+                    assert(index.isinf().any() == False)
+                else:
+                    index_history = torch.randint(0, self.pool_sample_count, (bs_history,), device=self.device)
+
+                    index = torch.cat((index_history, index_new), dim=0)
+
+                index = torch.clamp(index, min=0, max=self.pool_sample_count - 1)
             else: # uniformly sample the pool
                 index = torch.randint(0, self.pool_sample_count, (self.config.bs,), device=self.device)
         else: # uniformly sample the pool
