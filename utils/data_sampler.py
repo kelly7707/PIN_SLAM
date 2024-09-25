@@ -27,17 +27,17 @@ class DataSampler():
 
         dev = self.dev
 
-        surface_sample_range = self.config.surface_sample_range_m 
-        surface_sample_n = self.config.surface_sample_n
-        freespace_behind_sample_n = self.config.free_behind_n
-        freespace_front_sample_n = self.config.free_front_n
+        surface_sample_range = self.config.surface_sample_range_m #0.3
+        surface_sample_n = self.config.surface_sample_n # 3
+        freespace_behind_sample_n = self.config.free_behind_n # 1
+        freespace_front_sample_n = self.config.free_front_n # 2
 
         all_sample_n = surface_sample_n+freespace_behind_sample_n+freespace_front_sample_n+1 # 1 as the exact measurement #default ~=7
-        free_front_min_ratio = self.config.free_sample_begin_ratio
-        free_sample_end_dist = self.config.free_sample_end_dist_m
+        free_front_min_ratio = self.config.free_sample_begin_ratio # 0.3
+        free_sample_end_dist = self.config.free_sample_end_dist_m # 1
         # clearance_dist_scaled = self.config.clearance_dist_m * self.config.scale
         
-        sigma_base = self.config.sigma_sigmoid_m
+        sigma_base = self.config.sigma_sigmoid_m #0.08
 
         # get sample points
         point_num = points_torch.shape[0]

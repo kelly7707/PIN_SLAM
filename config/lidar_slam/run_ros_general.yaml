@@ -20,13 +20,13 @@ neuralpoints:
   weighted_first: False
   voxel_size_m: 0.4 #resolution
   feature_dim: 8 # 8 
-  query_nn_k: 9 # 6
+  query_nn_k: 6 # 6
   search_alpha: 0.5 # increase when you want to be more robust to agressive motions
 training:
   attention_mode: True
 decoder:
   mlp_hidden_dim: 32 #64
-  freeze_after_frame: 50 #40
+  freeze_after_frame: 40 #40
 loss:
   main_loss_type: bce
   loss_weight_on: True
@@ -34,7 +34,7 @@ loss:
   ekional_loss_on: True
   weight_e: 0.5
 continual:
-  batch_size_new_sample: 1500
+  batch_size_new_sample: 1500 # 1500
   pool_capacity: 2e7
   pool_filter_freq: 10
 tracker:

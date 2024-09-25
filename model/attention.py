@@ -65,11 +65,11 @@ class Attention(nn.Module):
         # self.value_layer = nn.Sequential(
         #     nn.Linear(feature_dim, kv_dim, bias_on), # feature_dim # input_layer_count
         #     nn.LayerNorm(kv_dim), # LN2 
-        #     nn.ReLU(inplace=True)
-        #     # nn.Tanh()
+        #     # nn.ReLU(inplace=True)
+        #     nn.Tanh()
         # )
         # self.key_layer = nn.Sequential(
-        #     nn.Linear(position_dim, kv_dim, bias_on), #position_dim # input_layer_count
+        #     nn.Linear(input_layer_count, kv_dim, bias_on), #position_dim # input_layer_count
         #     nn.LayerNorm(kv_dim), # LN3
         #     # nn.ReLU(inplace=True)
         #     nn.Tanh()
@@ -138,7 +138,7 @@ class Attention(nn.Module):
         value = self.value_layer(shared_output)
         key = self.key_layer(shared_output)
         # value = self.value_layer(features[:,:,:8]) # features[:,:,:8]
-        # key = self.key_layer(features[:,:,-3:]) #.clone().detach() # features[:,:,-3:]
+        # key = self.key_layer(features) #.clone().detach() # features[:,:,-3:]
 
         query = self.query_layer(query_features.clone().detach()).unsqueeze(1)  #.clone().detach()
         # query = self.query_layer(zeros_tensor).unsqueeze(1)
