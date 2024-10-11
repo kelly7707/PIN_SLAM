@@ -648,7 +648,7 @@ class SLAMDataset(Dataset):
             else:
                 cur_source_ts = None
 
-            # deprecated # key points extraction for registration
+            # # deprecated # key points extraction for registration
             # if self.config.estimate_normal:
             #     source_points = self.cur_source_points.clone()
             #     cur_hasher = VoxelHasherIndex(source_points, source_voxel_m, buffer_size=int(1e6))
@@ -695,7 +695,24 @@ class SLAMDataset(Dataset):
                 self.cur_point_cloud_torch = deskewing_IMU(self.cur_point_cloud_torch, self.cur_point_ts_torch, self.ts_raw_imu_curinterval[1:], T_Lcur_Limu_deskewing, np.linalg.inv(T_Llast_Lcur), lidar_last_ts, lidar_cur_ts)
                 self.post_deskewing_points = self.cur_point_cloud_torch.clone()
             # print("# Source point for registeration : ", cur_source_torch.shape[0])
-    
+
+
+        # --- estimate_normals direction for sdf 
+        if self.config.estimate_normal:
+            cur_point_cloud_np = self.cur_point_cloud_torch.detach().cpu().numpy()
+
+            o3d_device = o3d.core.Device("CPU:0") # cuda:0
+            o3d_dtype = o3d.core.float32
+            cur_point_cloud_o3d = o3d.t.geometry.PointCloud(o3d_device)
+            cur_point_cloud_o3d.point["positions"] = o3d.core.Tensor(
+                cur_point_cloud_np, o3d_dtype, o3d_device
+            )
+            print("Estimate normal")
+            cur_point_cloud_o3d.estimate_normals(max_nn=20)
+            cur_point_cloud_o3d.orient_normals_towards_camera_location() # orient normals towards the default origin(0,0,0).
+            if self.config.estimate_normal:
+                self.frame_normal_torch = torch.tensor(cur_point_cloud_o3d.point.normals.numpy(), dtype=self.dtype, device=self.config.device)
+
         T4 = get_time()
     
     def update_odom_pose(self, cur_pose_torch: torch.tensor):

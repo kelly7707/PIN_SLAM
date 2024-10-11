@@ -10,6 +10,8 @@ process:
   min_range_m: 2.5
   max_range_m: 80.0 # maximum distance filter for each frame
   adaptive_range_on: True
+  
+  estimate_normal: True # default False
 sampler:
   surface_sample_range_m: 0.3
   surface_sample_n: 3
@@ -27,6 +29,7 @@ training:
 decoder:
   mlp_hidden_dim: 32 #64
   freeze_after_frame: 40 #40
+  # VAE_on: True # default False
 loss:
   main_loss_type: bce
   loss_weight_on: True

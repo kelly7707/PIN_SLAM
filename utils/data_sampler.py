@@ -4,6 +4,9 @@
 # Copyright (c) 2024 Yue Pan, all rights reserved
 
 import torch
+import open3d as o3d
+import matplotlib.pyplot as plt
+import numpy as np
 
 from utils.config import Config
 from utils.tools import get_time
@@ -20,8 +23,10 @@ class DataSampler():
     def sample(self, points_torch, 
                normal_torch,
                sem_label_torch,
-               color_torch):
+               color_torch, normal_guided_sampling = False):
         # points_torch is in the sensor's local coordinate system, not yet transformed to the global system
+
+        # self.visualize_point_cloud(points_torch,normal_torch)
 
         T0 = get_time()
 
@@ -108,8 +113,32 @@ class DataSampler():
         
         repeated_points = points_torch.repeat(all_sample_n,1)
         repeated_dist = distances.repeat(all_sample_n,1)
-        all_sample_points = repeated_points*all_sample_dist_ratio
-        # all_sample_points = repeated_points*all_sample_dist_ratio + sensor_origin_torch
+        # -- sample points
+        # if normal_guided_sampling: 
+        #     normal_direction = normal_torch.repeat(all_sample_n,1) # normals are oriented towards sensors.
+        #     #note that normals are oriented towards origin (inwards)
+        #     all_sample_points = repeated_points + all_sample_displacement * (-normal_direction)
+        # else: # pin-slam
+        #     all_sample_points = repeated_points*all_sample_dist_ratio
+        #     # all_sample_points = repeated_points*all_sample_dist_ratio + sensor_origin_torch
+
+        # -- sample points (only add normal guided sampling for the close-to-surface samples)
+        if normal_guided_sampling: 
+            measured_sample_points = points_torch
+
+            surface_normal_direction = normal_torch.repeat(surface_sample_n,1)
+            surface_points = points_torch.repeat(surface_sample_n,1)
+            surface_sample_points = surface_points+ surface_sample_displacement * (-surface_normal_direction)
+            
+            free_front_points = points_torch.repeat(freespace_front_sample_n,1) 
+            free_front_sample_points = free_front_points * free_sample_front_dist_ratio
+            
+            free_behind_points = points_torch.repeat(freespace_behind_sample_n,1)
+            free_behind_sample_points = free_behind_points * free_sample_behind_dist_ratio
+
+            all_sample_points = torch.cat((measured_sample_points, surface_sample_points, free_front_sample_points, free_behind_sample_points),0)
+        else:
+            all_sample_points = repeated_points*all_sample_dist_ratio
 
         # depth tensor of all the samples
         depths_tensor = repeated_dist * all_sample_dist_ratio
@@ -192,9 +221,104 @@ class DataSampler():
         # print("time for sampling III:", T3-T2)
         # all super fast, all together in 0.5 ms
 
+        # self.visualize_sdf_with_colors(all_sample_points, sdf_label_tensor)
+        # self.visualize_sdf_with_threshold_and_color(all_sample_points, sdf_label_tensor, threshold1=0.6, threshold2=0.6)
+        # self.visualize_point_cloud(all_sample_points, normal_label_tensor)
+        
         return all_sample_points, sdf_label_tensor, normal_label_tensor, sem_label_tensor, color_tensor, weight_tensor
 
     
+    def visualize_point_cloud(self, points_torch, normal_torch,scale=1):
+        # Convert tensors to numpy arrays
+        points_np = points_torch.cpu().numpy()
+        normals_np = normal_torch.cpu().numpy()
+
+        # Create an Open3D point cloud object
+        point_cloud = o3d.geometry.PointCloud()
+        point_cloud.points = o3d.utility.Vector3dVector(points_np)
+        point_cloud.normals = o3d.utility.Vector3dVector(normals_np)
+
+        # Create line sets to represent normals as arrows/lines
+        lines = []
+        line_colors = []
+        points_with_arrows = []
+
+        for i in range(points_np.shape[0]):
+            start_point = points_np[i]
+            end_point = start_point + normals_np[i] * scale  # scale to control arrow size
+            
+            points_with_arrows.append(start_point)
+            points_with_arrows.append(end_point)
+            
+            lines.append([i*2, i*2 + 1])
+            line_colors.append([0, 1, 0])  # Green color for normals
+
+        # Create line set object for the normals
+        line_set = o3d.geometry.LineSet(
+            points=o3d.utility.Vector3dVector(points_with_arrows),
+            lines=o3d.utility.Vector2iVector(lines),
+        )
+        line_set.colors = o3d.utility.Vector3dVector(line_colors)
+
+        # Visualize point cloud with normal vectors
+        o3d.visualization.draw_geometries([point_cloud, line_set])
+
+    
+    def visualize_sdf_with_colors(self, points_torch, sdf_torch):
+
+        # Convert tensors to numpy arrays
+        points_np = points_torch.cpu().numpy()
+        sdf_np = sdf_torch.cpu().numpy()
+
+        # Normalize the SDF values to be between 0 and 1 for color mapping
+        min_sdf, max_sdf = np.min(sdf_np), np.max(sdf_np)
+        sdf_normalized = (sdf_np - min_sdf) / (max_sdf - min_sdf)
+
+        # Generate colors based on the normalized SDF values
+        colormap = plt.get_cmap('coolwarm')  # 'coolwarm' goes from blue to red
+        colors_np = colormap(sdf_normalized)[:, :3]  # Extract only the RGB values
+
+        # Create an Open3D point cloud object
+        point_cloud = o3d.geometry.PointCloud()
+        point_cloud.points = o3d.utility.Vector3dVector(points_np)
+        point_cloud.colors = o3d.utility.Vector3dVector(colors_np)
+
+        # Visualize the point cloud with SDF colors
+        o3d.visualization.draw_geometries([point_cloud])
+
+
+    def visualize_sdf_with_threshold_and_color(self, points_torch, sdf_torch, threshold1=0.3, threshold2=0.6):
+        # Convert tensors to numpy arrays
+        points_np = points_torch.cpu().numpy()
+        sdf_np = sdf_torch.cpu().numpy()
+
+        # Filter points that are within the specified SDF thresholds
+        mask = (sdf_np <= threshold1) 
+        points_in_layer = points_np[mask]
+        sdf_in_layer = sdf_np[mask]
+
+        # Ensure there are points in the layer
+        if points_in_layer.shape[0] == 0:
+            print("No points found within the specified thresholds.")
+            return
+
+        # Normalize the SDF values in the layer to be between 0 and 1
+        min_sdf, max_sdf = np.min(sdf_in_layer), np.max(sdf_in_layer)
+        sdf_normalized = (sdf_in_layer - min_sdf) / (max_sdf - min_sdf)
+
+        # Generate colors based on the normalized SDF values
+        colormap = plt.get_cmap('coolwarm')  # 'coolwarm' goes from blue to red
+        colors_np = colormap(sdf_normalized)[:, :3]  # Extract RGB values only
+
+        # Create an Open3D point cloud object for the points in the layer
+        point_cloud = o3d.geometry.PointCloud()
+        point_cloud.points = o3d.utility.Vector3dVector(points_in_layer)
+        point_cloud.colors = o3d.utility.Vector3dVector(colors_np)
+
+        # Visualize the point cloud for the specified SDF layer
+        o3d.visualization.draw_geometries([point_cloud])
+
+
     def sample_source_pc(self, points):
 
         dev = self.dev

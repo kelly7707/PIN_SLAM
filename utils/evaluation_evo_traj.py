@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 # traj_est_file = 'experiments/history/tanh-new college-no dropout-test_ros_2024-08-22_22-16-16/slam_poses__tum.txt'
 # traj_est_file = 'experiments/history/corrected-initial_guess-deskewing-pgo-test_ros_2024-06-26_13-37-37/odom_poses__tum.txt'
 
+# traj_est_file = 'experiments/test_ros_2024-09-09_17-35-43/slam_poses__tum.txt' # with relu
+
 # # -- unique model testing
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/ours-newcollege_test_ros_2024-09-07_11-48-24/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/newcollege-pgocorrected-pin-slam_test_ros_2024-09-07_15-54-36/slam_poses__tum_correctedts.txt'
@@ -29,9 +31,13 @@ import matplotlib.pyplot as plt
 # traj_est_file_origin = 'experiments/test_ros_2024-09-23_11-03-17/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/nce-3500-3500-3000test_ros_2024-09-23_23-15-24/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/nce-new_recent_allhis-1500-1500--test_ros_2024-09-24_12-06-40/slam_poses__tum.txt'
-traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/nce-new_recent_allhis-1500_3000--test_ros_2024-09-24_14-17-56/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/nce-new_recent_allhis-1500_3000--test_ros_2024-09-24_14-17-56/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/nce-new samples for training around 03-test_ros_2024-09-25_19-10-28/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/nce-history surface 06-test_ros_2024-09-25_21-03-50/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/!nce- unfreeze50050- history_idx 06 around surface-test_ros_2024-09-26_09-05-52/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/nce- sdf_normal_03- test_ros_2024-10-10_08-12-11/slam_poses__tum.txt'
+traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/nce-sdf_normal_03-based_on_baseline-test_ros_2024-10-10_11-12-50/slam_poses__tum.txt'
 
-# traj_est_file = 'experiments/test_ros_2024-09-09_17-35-43/slam_poses__tum.txt' # with relu
 traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv' # ground truth in tum format
 # # traj_ref_file = 'data/Newer_College_Dataset/transformed_gt-nc-quad-easy_TMU.csv'
 
@@ -43,6 +49,7 @@ traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv' # ground tr
 # traj_est_file = 'experiments/history/tempororily_unique_model/ncm-ours-smalllamda-test_ros_2024-09-09_15-56-52/slam_poses__tum.txt'
 # # -- overfitting testing
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/ncm-unfreeze500-50-test_ros_2024-09-23_17-55-34/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/!ncm- unfreeze50050- history_idx 06 around surface-test_ros_2024-09-26_12-14-17/slam_poses__tum.txt'
 
 # traj_ref_file = 'data/Newer_College_Dataset/medium/gt-nc-quad-medium.csv'
 # # traj_ref_file = 'data/Newer_College_Dataset/transformed_gt-nc-quad-medium.csv'
@@ -76,8 +83,11 @@ traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv' # ground tr
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/katzensee-20mapping-calculated warmup-test_ros_2024-09-19_09-57-11/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/katzensee-12neighbors-test_ros_2024-09-19_11-19-22/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/katzensee-4neighbors-test_ros_2024-09-19_12-46-22/slam_poses__tum.txt'
-# traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/katzensee-unfreeze in certain frequency500-50 - test_ros_2024-09-23_15-40-55/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/katzensee-unfreeze in certain frequency500-50 - test_ros_2024-09-23_15-40-55/slam_poses__tum.txt' # 0.479304357137083
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/katzensee-new-recent-1500-1500-allhistory-test_ros_2024-09-24_10-50-18/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/katzensee-history distance to surface 06-test_ros_2024-09-25_22-56-23/slam_poses__tum.txt' # better 0.3553936312913024
+# traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/! katzesee- unfreeze50050- history_idx 06 around surface-test_ros_2024-09-26_10-37-51/slam_poses__tum.txt' # better 0.3883542329867946 
+# traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/katzensee-sdf_normal_03-test_ros_2024-10-09_23-46-12/slam_poses__tum.txt'
 
 # traj_ref_file = 'data/ASL/katzensee/gt-katzensee_s.csv'
 # # traj_ref_file = 'data/ASL/katzensee/transformed_gt-katzensee_s.csv'

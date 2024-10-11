@@ -154,13 +154,22 @@ class Mapper():
         #     if filter_dynamic:
         #         frame_label_torch = frame_label_torch[self.static_mask]
 
-        frame_normal_torch = None # not used yet
+
+        if self.config.estimate_normal:
+            frame_normal_torch = self.dataset.frame_normal_torch
+        else: # pin-slam
+            frame_normal_torch = None # not used yet
+
+        if self.config.estimate_normal:
+            normal_guided_sampling= True
+        else:
+            normal_guided_sampling = False
 
         T1 = get_time()
 
         # sampling data for training
         (coord, sdf_label, normal_label, sem_label, color_label, weight) = \
-            self.sampler.sample(frame_point_torch, frame_normal_torch, frame_label_torch, frame_color_torch)        
+            self.sampler.sample(frame_point_torch, frame_normal_torch, frame_label_torch, frame_color_torch, normal_guided_sampling)        
         # coord is in sensor local frame
 
             
@@ -322,7 +331,7 @@ class Mapper():
             new_sample_count = self.new_idx.shape[0]
             if self.config.adaptive_mode and new_sample_count / self.cur_sample_count < self.config.new_sample_ratio_thre:
                 self.train_less = True
-            else:
+            else: # default
                 self.train_less = False
 
             if not self.silence:
@@ -345,9 +354,10 @@ class Mapper():
             # half, half for the history and current samples
             new_idx_count = self.new_idx.shape[0]
 
-            recent_idx_count = sum(tensor.numel() for tensor in self.new_idx_history) - new_idx_count
+            # # whether or not take the recent samples (last 3 frames) into account --- doesn't make difference
+            # recent_idx_count = sum(tensor.numel() for tensor in self.new_idx_history) - new_idx_count
             # print('------self.new_idx_history:', self.new_idx_history)
-            # recent_idx_count = 0
+            recent_idx_count = 0 
 
             if new_idx_count > 0:
                 # print('------new_idx_count:', new_idx_count)
@@ -376,7 +386,14 @@ class Mapper():
                     assert(index.isnan().any() == False)
                     assert(index.isinf().any() == False)
                 else:
-                    index_history = torch.randint(0, self.pool_sample_count, (bs_history,), device=self.device)
+                    # -- close to surface history samples
+                    index_history_filter = torch.where(torch.abs(self.sdf_label_pool) < self.config.surface_sample_range_m * 2.)[0] #0.3*3 
+                    history_idx_count = index_history_filter.shape[0]
+                    index_history_batch = torch.randint(0, history_idx_count, (bs_history,), device=self.device)
+                    index_history = index_history_filter[index_history_batch]
+                                       
+                    # # -- all history samples (pin-slam)
+                    # index_history = torch.randint(0, self.pool_sample_count, (bs_history,), device=self.device)
 
                     index = torch.cat((index_history, index_new), dim=0)
 
@@ -502,8 +519,8 @@ class Mapper():
             # we do not use the ray rendering loss here for the incremental mapping
             coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch(global_coord=not self.ba_done_flag) # coord here is in global frame if no ba pose update
 
-            # self.training_coord = torch.cat((self.training_coord, coord), 0)
-            self.training_coord = coord
+            # # self.training_coord = torch.cat((self.training_coord, coord), 0)
+            # self.training_coord = coord
 
             T01 = get_time()
 
