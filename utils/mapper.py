@@ -353,49 +353,27 @@ class Mapper():
         if self.config.bs_new_sample > 0 and self.new_idx is not None and not self.lose_track and not self.dataset.stop_status: 
             # half, half for the history and current samples
             new_idx_count = self.new_idx.shape[0]
-
-            # # whether or not take the recent samples (last 3 frames) into account --- doesn't make difference
-            # recent_idx_count = sum(tensor.numel() for tensor in self.new_idx_history) - new_idx_count
             # print('------self.new_idx_history:', self.new_idx_history)
-            recent_idx_count = 0 
 
             if new_idx_count > 0:
                 # print('------new_idx_count:', new_idx_count)
-                # print('------recent_idx_count:', recent_idx_count)
                 # print('------pool_sample_count', self.pool_sample_count)
                 bs_new = min(new_idx_count, self.config.bs_new_sample) # ,1500
-                if recent_idx_count > 0:
-                    bs_recent = min(3000, recent_idx_count)
-                    bs_history =  self.config.bs - bs_new - bs_recent # 5000
-                else:
-                    bs_history =  self.config.bs - bs_new # 10000-
-                
+                bs_history =  self.config.bs - bs_new # 10000-
                 
                 index_new_batch = torch.randint(0, new_idx_count, (bs_new,), device=self.device)
                 index_new = self.new_idx[index_new_batch]
 
-                if recent_idx_count > 0:
-                    # index_history = torch.randint(0, self.pool_sample_count-recent_idx_count-new_idx_count, (bs_history,), device=self.device)
-                    index_history = torch.randint(0, self.pool_sample_count, (bs_history,), device=self.device)
+                # -- option 1: close to surface history samples
+                index_history_filter = torch.where(torch.abs(self.sdf_label_pool) < self.config.surface_sample_range_m * 2.)[0] #0.3*3 
+                history_idx_count = index_history_filter.shape[0]
+                index_history_batch = torch.randint(0, history_idx_count, (bs_history,), device=self.device)
+                index_history = index_history_filter[index_history_batch]
+                                    
+                # # -- option 2: all history samples (pin-slam)
+                # index_history = torch.randint(0, self.pool_sample_count, (bs_history,), device=self.device)
 
-                    index_recent_batch = torch.randint(0, recent_idx_count, (bs_recent,), device=self.device)
-                    recent_idx = torch.cat(list(self.new_idx_history)[:-1], dim=0)
-                    index_recent = recent_idx[index_recent_batch]
-
-                    index = torch.cat((index_history, index_new, index_recent), dim=0)
-                    assert(index.isnan().any() == False)
-                    assert(index.isinf().any() == False)
-                else:
-                    # -- close to surface history samples
-                    index_history_filter = torch.where(torch.abs(self.sdf_label_pool) < self.config.surface_sample_range_m * 2.)[0] #0.3*3 
-                    history_idx_count = index_history_filter.shape[0]
-                    index_history_batch = torch.randint(0, history_idx_count, (bs_history,), device=self.device)
-                    index_history = index_history_filter[index_history_batch]
-                                       
-                    # # -- all history samples (pin-slam)
-                    # index_history = torch.randint(0, self.pool_sample_count, (bs_history,), device=self.device)
-
-                    index = torch.cat((index_history, index_new), dim=0)
+                index = torch.cat((index_history, index_new), dim=0)
 
                 index = torch.clamp(index, min=0, max=self.pool_sample_count - 1)
             else: # uniformly sample the pool
