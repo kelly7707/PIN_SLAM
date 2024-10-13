@@ -75,7 +75,15 @@ class NeuralPoints(nn.Module):
         # TODO: add the second level for recording known and unknown space
         self.neural_points = torch.empty((0, 3), dtype=self.dtype, device=self.device)
         self.point_orientations = torch.empty((0, 4), dtype=self.dtype, device=self.device) # as quaternion
-        self.geo_features = torch.empty((1, self.geo_feature_dim), dtype=self.dtype, device=self.device)
+        # self.geo_features = torch.empty((1, self.geo_feature_dim), dtype=self.dtype, device=self.device)
+        # VAE
+        if self.config.VAE_on:
+            self.geo_mean = torch.empty((1, self.geo_feature_dim), dtype=self.dtype, device=self.device)
+            self.geo_variance = torch.empty((1, self.geo_feature_dim), dtype=self.dtype, device=self.device)
+            self.geo_latent_feature = torch.empty((1, self.geo_feature_dim), dtype=self.dtype, device=self.device)
+        else: 
+            self.geo_features = torch.empty((1, self.geo_feature_dim), dtype=self.dtype, device=self.device)
+
         if self.config.color_on:
             self.color_features = torch.empty((1, self.color_feature_dim), dtype=self.dtype, device=self.device)
         else:
@@ -87,8 +95,13 @@ class NeuralPoints(nn.Module):
         # the local map
         self.local_neural_points = torch.empty((0, 3), dtype=self.dtype, device=self.device)
         self.local_point_orientations = torch.empty((0, 4), dtype=self.dtype, device=self.device) # as quaternion
-        self.local_geo_features = nn.Parameter() # learnable parameters, will be optimized during training.
-        # self.local_geo_features_query = nn.Parameter()
+        # self.local_geo_features = nn.Parameter() # learnable parameters, will be optimized during training.
+        if self.config.VAE_on:
+            self.local_geo_mean = nn.Parameter()
+            self.local_geo_variance = nn.Parameter()
+        else:
+            self.local_geo_features = nn.Parameter()
+
         self.local_color_features = nn.Parameter()  
         self.local_point_certainties = torch.empty((0), dtype=self.dtype, device=self.device) #?
         self.local_point_ts_update = torch.empty((0), device=self.device, dtype=torch.long)
@@ -256,9 +269,15 @@ class NeuralPoints(nn.Module):
         self.point_ts_create = torch.cat((self.point_ts_create, new_points_ts), 0)
         self.point_ts_update = torch.cat((self.point_ts_update, new_points_ts), 0)  
         
-        # feature initialization (with padding in the end)
-        new_fts = self.geo_feature_std*torch.randn(new_point_count+1, self.geo_feature_dim, device=self.device, dtype=self.dtype)
-        self.geo_features = torch.cat((self.geo_features[:-1], new_fts),0)
+        # feature initialization (with padding in the end)  
+        if self.config.VAE_on:
+            new_ft_mean = self.geo_feature_std*torch.randn(new_point_count+1, self.geo_feature_dim, device=self.device, dtype=self.dtype)
+            new_ft_variance = self.geo_feature_std*torch.randn(new_point_count+1, self.geo_feature_dim, device=self.device, dtype=self.dtype)
+            self.geo_mean = torch.cat((self.geo_mean[:-1], new_ft_mean),0)
+            self.geo_variance = torch.cat((self.geo_variance[:-1], new_ft_variance),0)
+        else:
+            new_fts = self.geo_feature_std*torch.randn(new_point_count+1, self.geo_feature_dim, device=self.device, dtype=self.dtype)
+            self.geo_features = torch.cat((self.geo_features[:-1], new_fts),0)
 
         # with padding in the end
         if self.color_features is not None:
@@ -307,8 +326,12 @@ class NeuralPoints(nn.Module):
 
         self.global2local = global2local 
         
-        assert self.geo_features.shape[0] == local_mask.shape[0]
-        self.local_geo_features = nn.Parameter(self.geo_features[local_mask])
+        if self.config.VAE_on:
+            self.local_geo_mean = nn.Parameter(self.geo_mean[local_mask])
+            self.local_geo_variance = nn.Parameter(self.geo_variance[local_mask])
+        else:
+            assert self.geo_features.shape[0] == local_mask.shape[0]
+            self.local_geo_features = nn.Parameter(self.geo_features[local_mask])
                
         if self.color_features is not None:
             self.local_color_features = nn.Parameter(self.color_features[local_mask])
@@ -320,8 +343,14 @@ class NeuralPoints(nn.Module):
         local_mask = self.local_mask
         self.neural_points[local_mask[:-1]] = self.local_neural_points
         self.point_orientations[local_mask[:-1]] = self.local_point_orientations
-        self.geo_features[local_mask] = self.local_geo_features.data
-        # self.geo_features_query[local_mask] = self.local_geo_features_query.data
+
+        if self.config.VAE_on:
+            self.geo_mean[local_mask] = self.local_geo_mean.data
+            self.geo_variance[local_mask] = self.local_geo_variance.data
+        else:
+            self.geo_features[local_mask] = self.local_geo_features.data
+            # self.geo_features_query[local_mask] = self.local_geo_features_query.data
+        
         if self.color_features is not None:
             self.color_features[local_mask] = self.local_color_features.data
         self.point_certainties[local_mask[:-1]] = self.local_point_certainties
@@ -349,7 +378,13 @@ class NeuralPoints(nn.Module):
 
             # with padding
             prune_mask = torch.cat((prune_mask, torch.tensor([False]).to(prune_mask)), dim=0)
-            self.geo_features = self.geo_features[~prune_mask]
+            
+            if self.config.VAE_on:
+                self.geo_mean = self.geo_mean[~prune_mask]
+                self.geo_variance = self.geo_variance[~prune_mask]
+            else:
+                self.geo_features = self.geo_features[~prune_mask]
+
             if self.config.color_on:
                 self.color_features = self.color_features[~prune_mask]
             # recreate hash and local map then
@@ -415,7 +450,12 @@ class NeuralPoints(nn.Module):
             self.point_certainties = self.point_certainties[sample_idx]
 
             sample_idx_pad = torch.cat((sample_idx, torch.tensor([-1]).to(sample_idx)))
-            self.geo_features = self.geo_features[sample_idx_pad] # with padding in the end
+            if self.config.VAE_on:
+                self.geo_mean = self.geo_mean[sample_idx_pad]
+                self.geo_variance = self.geo_variance[sample_idx_pad]
+            else:
+                self.geo_features = self.geo_features[sample_idx_pad] # with padding in the end
+            
             if self.color_features is not None:
                 self.color_features = self.color_features[sample_idx_pad] # with padding in the end
 
@@ -539,6 +579,11 @@ class NeuralPoints(nn.Module):
         batch_size = query_points.shape[0]
         
         geo_features_vector = None
+        # if self.config.VAE_on:
+        #     geo_mean_vector = None
+        #     geo_variance_vector = None
+        # else:
+        #     geo_features_vector = None
         color_features_vector = None
 
         nn_k = self.config.query_nn_k  # ~=6
@@ -577,14 +622,25 @@ class NeuralPoints(nn.Module):
 
         valid_mask = idx >= 0 # [N, K]
 
-        if query_geo_feature:
-            geo_features = torch.zeros(batch_size, nn_k, self.geo_feature_dim, device=self.device, dtype=self.dtype) # [N, K, F] 
-            if query_locally: #default here
-                geo_features[valid_mask] = self.local_geo_features[idx[valid_mask]]
+        if query_geo_feature: 
+            if self.config.VAE_on:
+                geo_mean = torch.zeros(batch_size, nn_k, self.geo_feature_dim, device=self.device, dtype=self.dtype) # [N, K, F]
+                geo_variance = torch.zeros(batch_size, nn_k, self.geo_feature_dim, device=self.device, dtype=self.dtype) # [N, K, F]
+                if query_locally: #default here
+                    geo_mean[valid_mask] = self.local_geo_mean[idx[valid_mask]]
+                    geo_variance[valid_mask] = self.local_geo_variance[idx[valid_mask]]
+                else:
+                    geo_mean[valid_mask] = self.geo_mean[idx[valid_mask]]
+                    geo_variance[valid_mask] = self.geo_variance[idx[valid_mask]]
+
             else:
-                geo_features[valid_mask] = self.geo_features[idx[valid_mask]]
-            if self.config.layer_norm_on:
-                geo_features = F.layer_norm(geo_features, [self.geo_feature_dim])
+                geo_features = torch.zeros(batch_size, nn_k, self.geo_feature_dim, device=self.device, dtype=self.dtype) # [N, K, F] 
+                if query_locally: #default here
+                    geo_features[valid_mask] = self.local_geo_features[idx[valid_mask]]
+                else:
+                    geo_features[valid_mask] = self.geo_features[idx[valid_mask]]
+                if self.config.layer_norm_on: # default off
+                    geo_features = F.layer_norm(geo_features, [self.geo_feature_dim])
 
         if query_color_feature and self.color_features is not None:
             color_features = torch.zeros(batch_size, nn_k, self.color_feature_dim, device=self.device, dtype=self.dtype) # [N, K, F] 
@@ -616,7 +672,12 @@ class NeuralPoints(nn.Module):
             neighb_vector = self.position_encoder_geo(neighb_vector) # [N, K, P]
 
         if query_geo_feature:
-            geo_features_vector = torch.cat((geo_features, neighb_vector), dim=2) # [N, K, F+P]
+            if self.config.VAE_on: # TODO:?? combined with distance now?
+                # geo_mean_vector = torch.cat((geo_mean, neighb_vector), dim=2)
+                geo_latent_feature = self.reparameterize(geo_mean, geo_variance)
+                geo_features_vector = torch.cat((geo_latent_feature, neighb_vector), dim=2)
+            else:
+                geo_features_vector = torch.cat((geo_features, neighb_vector), dim=2) # [N, K, F+P]
             
         if query_color_feature and self.color_features is not None:
             color_features_vector = torch.cat((color_features, neighb_vector), dim=2) # [N, K, F+P]
@@ -663,12 +724,12 @@ class NeuralPoints(nn.Module):
         
         weight_vector = weight_vector.unsqueeze(-1)  # [N, K, 1]
 
-        if self.config.weighted_first:
-            if query_geo_feature:
-                geo_features_vector = torch.sum(geo_features_vector * weight_vector, dim=1) # [N, F+P]
+        # if self.config.weighted_first:
+        #     if query_geo_feature:
+        #         geo_features_vector = torch.sum(geo_features_vector * weight_vector, dim=1) # [N, F+P]
 
-            if query_color_feature and self.color_features is not None:
-                color_features_vector = torch.sum(color_features_vector * weight_vector, dim=1) # [N, F+P]
+        #     if query_color_feature and self.color_features is not None:
+        #         color_features_vector = torch.sum(color_features_vector * weight_vector, dim=1) # [N, F+P]
 
         T3 = get_time()
 
@@ -677,15 +738,27 @@ class NeuralPoints(nn.Module):
         # print("time for sorting:", (T2-T1) * 1e3) # //
         # print("time for feature:", (T3-T2) * 1e3) # ///
 
+        
         return geo_features_vector, color_features_vector, weight_vector, nn_counts, queried_certainty
 
     
+    def reparameterize(self, mean, log_var): 
+        # (VAE) Samples latent feature using reparameterization trick.
+        std = torch.exp(0.5 * log_var) # Get the standard deviation 
+        eps = torch.randn_like(std) # Sample epsilon from N(0, 1) 
+        return mean + eps * std # Return z = mu + sigma * epsilon
+    
+
     # clear the temp data that is not needed
     def clear_temp(self, clean_more: bool = False):
         self.buffer_pt_index = None
         self.local_neural_points = None
         self.local_point_orientations = None
-        self.local_geo_features = nn.Parameter()
+        if self.config.VAE_on:
+            self.local_geo_mean = nn.Parameter()
+            self.local_geo_variance = nn.Parameter()
+        else:
+            self.local_geo_features = nn.Parameter()
 
         self.local_color_features = nn.Parameter() 
         self.local_point_certainties = None

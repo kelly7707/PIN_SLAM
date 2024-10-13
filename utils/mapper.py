@@ -364,14 +364,14 @@ class Mapper():
                 index_new_batch = torch.randint(0, new_idx_count, (bs_new,), device=self.device)
                 index_new = self.new_idx[index_new_batch]
 
-                # -- option 1: close to surface history samples
-                index_history_filter = torch.where(torch.abs(self.sdf_label_pool) < self.config.surface_sample_range_m * 2.)[0] #0.3*3 
-                history_idx_count = index_history_filter.shape[0]
-                index_history_batch = torch.randint(0, history_idx_count, (bs_history,), device=self.device)
-                index_history = index_history_filter[index_history_batch]
+                # # -- option 1: close to surface history samples
+                # index_history_filter = torch.where(torch.abs(self.sdf_label_pool) < self.config.surface_sample_range_m * 2.)[0] #0.3*3 
+                # history_idx_count = index_history_filter.shape[0]
+                # index_history_batch = torch.randint(0, history_idx_count, (bs_history,), device=self.device)
+                # index_history = index_history_filter[index_history_batch]
                                     
-                # # -- option 2: all history samples (pin-slam)
-                # index_history = torch.randint(0, self.pool_sample_count, (bs_history,), device=self.device)
+                # -- option 2: all history samples (pin-slam)
+                index_history = torch.randint(0, self.pool_sample_count, (bs_history,), device=self.device)
 
                 index = torch.cat((index_history, index_new), dim=0)
 
@@ -613,6 +613,12 @@ class Mapper():
                 eikonal_loss = eikonal_individual_losses.mean() # both the surface and the freespace
                 cur_loss += self.config.weight_e * eikonal_loss
             
+            # kl loss
+            if self.config.VAE_on:
+                kl_loss = -0.5 * torch.sum(1 + self.neural_points.geo_variance - self.neural_points.geo_mean.pow(2) - self.neural_points.geo_variance.exp())
+                cur_loss += self.config.weight_kl * kl_loss
+
+
             # # optional semantic loss
             # sem_loss = 0.
             # if self.config.semantic_on and self.config.weight_s > 0:

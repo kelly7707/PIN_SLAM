@@ -226,6 +226,7 @@ class Config:
         self.ekional_loss_on: bool = True
         self.ekional_add_to: str = 'all' # select from 'all', 'surface', 'freespace'
         self.weight_e: float = 0.5
+        self.weight_kl: float = 0.5
 
         self.consistency_loss_on: bool = False
         self.weight_c: float = 0.5 # weight for consistency loss, don't mix with the color weight 
@@ -450,6 +451,9 @@ class Config:
             # freeze the decoder after runing for x frames (used for incremental mapping to avoid forgeting)
             self.freeze_after_frame = config_args["decoder"].get("freeze_after_frame", self.freeze_after_frame)
 
+            # VAE
+            self.VAE_on = config_args["decoder"].get("VAE_on", False)
+
         # TODO, now set to the same as geo mlp, but actually can be different
         self.color_mlp_level = self.geo_mlp_level
         self.color_mlp_hidden_dim = self.geo_mlp_hidden_dim
@@ -472,6 +476,7 @@ class Config:
             
             self.ekional_loss_on = config_args["loss"].get("ekional_loss_on", self.ekional_loss_on) # use ekional loss (norm(gradient) = 1 loss)
             self.weight_e = float(config_args["loss"].get("weight_e", self.weight_e))
+            self.weight_kl = float(config_args["loss"].get("weight_kl", self.weight_kl))
 
             self.numerical_grad = config_args["loss"].get("numerical_grad_on", self.numerical_grad)
             if not self.numerical_grad:
