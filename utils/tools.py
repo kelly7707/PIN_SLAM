@@ -66,13 +66,14 @@ def setup_experiment(config: Config, argv = None, debug_mode: bool = False):
             # set up wandb
             setup_wandb()
             wandb.init(project="pin-slam", config=vars(config), dir=run_path) # your own worksapce
-            wandb.run.name = "field - close-to-surface 0.3 sdf estimation in normal direction (with un/freeeze and close history samples )- " + run_name
+            wandb.run.name = "katzensee_s - VAE_add relative distance on latent feature (with un/freeeze and close history samples )- " + run_name
             # Set a description for the run
-            wandb.run.notes = "|*close-to-surface 0.3 sdf estimation in normal direction*| /field /| *freeze with frequency 500-50 & mapping-process_frame-history_idx 0.3*2 around surface* | *6 neighbors*, *calculated warm-up*; no gradient.clip; 3 coord query -> 32 (linear Norm tanh), *(8+3) geo feature+ relative distance -- K|V* -> 32 (layernorm+ tanh); MHA(kv_bias_on + 0.2 dropout, add_bias_kv True); decoder(32->1)|(eikonal loss)gradient_decimation = 1|lr=0.01,1e-3 , no weight decay, adam|*mapper iter=15*, tracker iter =50 | **40 freezing decoder**|reg_lm_lambda= 1e-3 | LiDAR + IMU, PGO"
+            wandb.run.notes = "|*VAE_add relative distance on latent feature*| /katzensee_s /| *projective sdf*| *freeze,unfreeze with frequency 500-50 & mapping-process_frame-history_idx 0.3*2 around surface* | *6 neighbors*, *calculated warm-up*; no gradient.clip; 3 coord query -> 32 (linear Norm tanh), *(8+3) geo feature+ relative distance -- K|V* -> 32 (layernorm+ tanh); MHA(kv_bias_on + 0.2 dropout, add_bias_kv True); decoder(32->1)|(eikonal loss)gradient_decimation = 1|lr=0.01,1e-3 , no weight decay, adam|*mapper iter=15*, tracker iter =50 | **40 freezing decoder**|reg_lm_lambda= 1e-3 | LiDAR + IMU, PGO"
                 # asl katzensee_s // new college nce
-                # *training sample index_new=2000,index_recent=2000,index_all = 7000* || increase recent index ratio 2000/2000/7000 || new/recent/history-1500/2000/6500
-                # unfreeze 500-50- ncm -
+                # # *training sample index_new=2000,index_recent=2000,index_all = 7000* || increase recent index ratio 2000/2000/7000 || new/recent/history-1500/2000/6500
+                # unfreeze 500-50- 
                 # mapping-process_frame-self.new_idx 0.3 around surface || new_idx 0.3 around surface TODO: neural points saving
+                # close-to-surface 0.3 sdf estimation in normal direction
 
         # config file and reproducable shell script
         if argv is not None:

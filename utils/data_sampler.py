@@ -18,6 +18,8 @@ class DataSampler():
         self.config = config
         self.dev = config.device
 
+        self.count = 0
+
 
     # input and output are all torch tensors
     def sample(self, points_torch, 
@@ -113,7 +115,8 @@ class DataSampler():
         
         repeated_points = points_torch.repeat(all_sample_n,1)
         repeated_dist = distances.repeat(all_sample_n,1)
-        # -- sample points
+        
+        # # -- sample points (add normal guided sampling for all points)
         # if normal_guided_sampling: 
         #     normal_direction = normal_torch.repeat(all_sample_n,1) # normals are oriented towards sensors.
         #     #note that normals are oriented towards origin (inwards)
@@ -221,7 +224,9 @@ class DataSampler():
         # print("time for sampling III:", T3-T2)
         # all super fast, all together in 0.5 ms
 
-        # self.visualize_sdf_with_colors(all_sample_points, sdf_label_tensor)
+        self.count = self.count+1
+        # if self.count % 50 == 1:
+        #     self.visualize_sdf_with_colors(all_sample_points, sdf_label_tensor)
         # self.visualize_sdf_with_threshold_and_color(all_sample_points, sdf_label_tensor, threshold1=0.6, threshold2=0.6)
         # self.visualize_point_cloud(all_sample_points, normal_label_tensor)
         
