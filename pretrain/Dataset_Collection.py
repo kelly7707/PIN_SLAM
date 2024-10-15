@@ -1,61 +1,60 @@
-"""Description: This script is used to load multiple sequences from a rosbag file."""
-# import rospy
+"""Description: This script is used to extract multiple (5s or 50 msgs) sequences from each .bag file, mixing them, 
+and using one or two (n) sequences from a single bag per training iteration"""
+
 import rosbag
 import random
 import numpy as np
 import torch
 from sensor_msgs import point_cloud2
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset, Sampler
 
 
-def load_multiple_sequences(bag_file_path, point_cloud_topic, num_sequences=5, sequence_duration=5):
-    """extract multiple random, non-overlapping sequences by randomly sampling start times and slicing out 5-second windows from the dataset."""
-    # Store all point cloud messages and their timestamps
-    point_clouds = []
+def load_multiple_sequences(bag_file_path, point_cloud_topic, num_sequences=5, num_msgs=50):
+    """Extract multiple random, non-overlapping sequences by selecting 50 consecutive point cloud messages."""
+    
+    # Step 1: Preload all message timestamps
     timestamps = []
-    
-    # Open the rosbag and read messages 
     with rosbag.Bag(bag_file_path, 'r') as bag:
-        for topic, msg, t in bag.read_messages(topics=[point_cloud_topic]):
-            point_clouds.append(msg)
-            timestamps.append(t.to_sec())
-    
-    # Ensure we have enough data for multiple 5-second sequences
-    total_duration = timestamps[-1] - timestamps[0]
-    if total_duration < sequence_duration * num_sequences:
-        raise ValueError(f"Not enough data in {bag_file_path} for {num_sequences} sequences of {sequence_duration} seconds")
+        for _, _, t in bag.read_messages(topics=[point_cloud_topic]):
+            timestamps.append(t)
 
-    timestamps_np = np.array(timestamps)
-    point_clouds_np = np.array(point_clouds)
-    # Randomly select start times for each 5-second sequence
+    # Ensure we have enough messages for multiple sequences
+    total_messages = len(timestamps)
+    if total_messages < num_msgs * num_sequences:
+        raise ValueError(f"Not enough data in {bag_file_path} for {num_sequences} sequences of {num_msgs} messages each")
+
+    # Step 2: Randomly select starting indices for non-overlapping sequences
     selected_sequences = []
-    random.seed(42) # seed for reproducibility 
-
+    used_indices = []
+    random.seed(42)  # For reproducibility
     for _ in range(num_sequences):
-        start_time = random.uniform(timestamps[0], timestamps[-1] - sequence_duration)
-        end_time = start_time + sequence_duration
+        while True:
+            start_idx = random.randint(0, total_messages - num_msgs)
 
-        # Extract the point clouds within the selected 5-second window
-        # selected_point_clouds = [pc for pc, ts in zip(point_clouds, timestamps) if start_time <= ts <= end_time]
-        # -- method 1
-        mask = (timestamps_np >= start_time) & (timestamps_np <= end_time)
-        selected_point_clouds = [point_clouds[i] for i in range(len(point_clouds)) if mask[i]]
+            # Ensure no overlap with previously selected sequences
+            overlaps = any(start_idx < end and start_idx + num_msgs > start for start, end in used_indices)
 
-        point_coords = np.concatenate([np.array(list(point_cloud2.read_points(pc, field_names=("x", "y", "z"), skip_nans=True))) for pc in selected_point_clouds], axis=0)
-        selected_sequences.append(torch.tensor(point_coords, dtype=torch.float32))
+            if not overlaps:
+                used_indices.append((start_idx, start_idx + num_msgs))
+                break
 
-        # # # -- method 2 (depends on efficiency)
-        # mask = (timestamps_np >= start_time) & (timestamps_np <= end_time)
-        # selected_point_clouds = point_clouds_np[mask]
-        # # Convert point clouds to a usable format (e.g., N x 3 numpy array for coordinates)
-        # point_coords = np.concatenate([np.array(pc.points)[:, :3] for pc in selected_point_clouds], axis=0)
-        # selected_sequences.append(torch.tensor(point_coords, dtype=torch.float32))
+        # Step 3: Extract point cloud data from the selected indices using time intervals
+        point_coords = []
+        with rosbag.Bag(bag_file_path, 'r') as bag:
+            start_time = timestamps[start_idx]
+            end_time = timestamps[start_idx + num_msgs - 1]
+
+            # Read messages within the selected time interval
+            for topic, msg, t in bag.read_messages(topics=[point_cloud_topic], start_time=start_time, end_time=end_time):
+                points = np.array(list(point_cloud2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True)))
+                point_coords.append(points)
+
+        # Concatenate the point clouds for the current sequence into a tensor
+        if point_coords:
+            point_coords = np.concatenate(point_coords, axis=0)
+            selected_sequences.append(torch.tensor(point_coords, dtype=torch.float32))
 
     return selected_sequences  # List of point cloud tensors (one per sequence)
-
-# pydevd warning: Computing repr of point_clouds (list) was slow (took 13.93s)
-# Customize report timeout by setting the `PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT` environment variable to a higher timeout (default is: 0.5s)
-
 
 class PointCloudDataset(Dataset):
     def __init__(self, sequence_paths, point_cloud_topics, num_sequences_per_batch=5):
@@ -73,6 +72,62 @@ class PointCloudDataset(Dataset):
         point_clouds = load_multiple_sequences(sequence_path, point_cloud_topic, num_sequences=self.num_sequences_per_batch)
         return point_clouds  # Return a list of point clouds (sequences)
 
+# class PointCloudDataset(Dataset):
+#     def __init__(self, sequence_paths, num_sequences_per_bag=10):
+#         self.sequences = []  # Store all sequences, but track which bag they came from
+#         self.sequence_labels = []  # Keep track of which .bag each sequence came from
+        
+#         # Load multiple sequences from each bag and store them
+#         for sequence_path in sequence_paths:
+#             sequences_from_bag = load_multiple_sequences(sequence_path, num_sequences=num_sequences_per_bag)
+#             self.sequences.extend(sequences_from_bag)  # Store sequences from the bag
+#             self.sequence_labels.extend([sequence_path] * num_sequences_per_bag)  # Track source of sequences
+    
+#     def __len__(self):
+#         return len(self.sequences)
+    
+#     def __getitem__(self, idx):
+#         # Return a sequence and the label (the bag it came from)
+#         return self.sequences[idx], self.sequence_labels[idx]
+
+class SingleBagBatchSampler(Sampler):
+    def __init__(self, dataset, sequences_per_batch=2):
+        self.dataset = dataset
+        self.sequences_per_batch = sequences_per_batch
+
+    def __iter__(self):
+        bag_to_sequences = {}  # Map bag file paths to list of sequence indices
+
+        # Group sequences by their .bag file label
+        for idx, label in enumerate(self.dataset.sequence_labels):
+            if label not in bag_to_sequences:
+                bag_to_sequences[label] = []
+            bag_to_sequences[label].append(idx)
+        
+        # Create batches by randomly picking 1 or 2 sequences from the same .bag
+        while bag_to_sequences:
+            # Randomly select a bag from the available bags
+            bag_label = random.choice(list(bag_to_sequences.keys()))
+            sequence_indices = bag_to_sequences[bag_label]
+            
+            # Select 1 or 2 sequences randomly from this bag
+            batch_indices = random.sample(sequence_indices, k=self.sequences_per_batch)
+            
+            # Remove the selected sequences from the bag
+            for idx in batch_indices:
+                sequence_indices.remove(idx)
+            
+            # If no more sequences in this bag, remove the bag from the pool
+            if len(sequence_indices) == 0:
+                del bag_to_sequences[bag_label]
+            
+            # Yield the indices for this batch
+            yield batch_indices
+
+    def __len__(self):
+        # Total number of batches (each batch is either 1 or 2 sequences from one .bag)
+        return len(self.dataset) // self.sequences_per_batch
+    
 # -- New college dataset
 NC_point_cloud_topic = "/os_cloud_node/points"
 nce_bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
@@ -93,39 +148,18 @@ dataset = PointCloudDataset(sequence_paths, point_cloud_topics, num_sequences_pe
 dataloader = DataLoader(dataset, batch_size=1, shuffle=True)  # Each batch contains multiple sequences
 
 for batch in dataloader:
-    # testing: 'batch' will be a list of point clouds (one list for each .bag file) 
+    # 'batch' will be a list of point clouds (one list for each .bag file) 
+    print('a batch successfully loaded')
     for point_clouds in batch:
         for sequence in point_clouds:
             print(sequence.shape)  # Each sequence is an Nx3 tensor of point cloud coordinates
 
 
-# ----------- pretraing
-optimizer = torch.optim.Adam(decoder.parameters(), lr=1e-4)
-criterion = nn.MSELoss()
+# # Create dataset with sequences from all bags
+# dataset = PointCloudDataset(sequence_paths, num_sequences_per_bag=10)
 
-for batch in dataloader:
-    # Each 'batch' contains multiple 5-second sequences from a .bag file
-    for point_clouds in batch:
-        optimizer.zero_grad()
+# # Use custom batch sampler for one or two sequences from the same bag per batch
+# batch_sampler = SingleBagBatchSampler(dataset, sequences_per_batch=2)
 
-        # Iterate over each 5-second sequence in the batch
-        for point_coords in point_clouds:
-            num_points = point_coords.shape[0]
-
-            # Reinitialize geo_features for this sequence
-            geo_features = initialize_geo_features(batch_size=1, num_points=num_points)
-
-            # Forward pass through the decoder
-            sdf_pred = decoder(point_coords, geo_features)
-
-            # Assuming you have ground truth SDF values
-            sdf_gt = get_sdf_ground_truth(point_coords)
-            loss = criterion(sdf_pred, sdf_gt)
-
-            # Backward pass and optimization
-            loss.backward()
-
-        # Update weights after accumulating gradients for all sequences in the batch
-        optimizer.step()
-
-    print(f"Batch Loss: {loss.item()}")
+# # Dataloader with custom batch sampler
+# dataloader = DataLoader(dataset, batch_sampler=batch_sampler)
