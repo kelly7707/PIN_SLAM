@@ -115,6 +115,42 @@ class NeuralPoints(nn.Module):
 
         self.to(self.device)
 
+    def clear(self):
+        self.local_orientation = torch.eye(3, device=self.device)
+        self.cur_ts = 0 # current frame No. or the current timestamp
+        self.max_ts = 0
+        self.travel_dist = None # for determine the local map, update from the dataset class for each frame
+        self.est_poses = None
+        self.after_pgo = False
+        self.buffer_pt_index = torch.full((self.buffer_size,), -1, dtype=self.idx_dtype, device=self.device)
+        
+        self.neural_points = torch.empty((0, 3), dtype=self.dtype, device=self.device)
+        self.point_orientations = torch.empty((0, 4), dtype=self.dtype, device=self.device)
+        if self.config.VAE_on:
+            self.geo_mean = torch.empty((1, self.geo_feature_dim), dtype=self.dtype, device=self.device)
+            self.geo_variance = torch.empty((1, self.geo_feature_dim), dtype=self.dtype, device=self.device)
+        else:
+            self.geo_features = torch.empty((1, self.geo_feature_dim), dtype=self.dtype, device=self.device)
+        
+        self.point_ts_create = torch.empty((0), device=self.device, dtype=torch.long)
+        self.point_ts_update = torch.empty((0), device=self.device, dtype=torch.long)
+        self.point_certainties = torch.empty((0), dtype=self.dtype, device=self.device)
+
+        self.local_neural_points = torch.empty((0, 3), dtype=self.dtype, device=self.device)
+        self.local_point_orientations = torch.empty((0, 4), dtype=self.dtype, device=self.device)
+        if self.config.VAE_on:
+            self.local_geo_mean = nn.Parameter()
+            self.local_geo_variance = nn.Parameter()
+        else:
+            self.local_geo_features = nn.Parameter()
+        self.local_color_features = nn.Parameter()
+        self.local_point_certainties = torch.empty((0), dtype=self.dtype, device=self.device)
+        self.local_point_ts_update = torch.empty((0), device=self.device, dtype=torch.long)
+        self.local_mask = None
+        self.global2local = None
+
+        self.memory_footprint = []
+    
     def is_empty(self):
         return self.neural_points.shape[0] == 0
     
@@ -216,7 +252,7 @@ class NeuralPoints(nn.Module):
     #     tsne = TSNE(n_components=3, perplexity=30, n_iter=300)
     #     tsne_result = tsne.fit_transform(self.geo_features[:-1].cpu().detach().numpy())
         
-    def update(self, points: torch.Tensor, sensor_position: torch.Tensor, sensor_orientation: torch.Tensor, cur_ts):
+    def update(self, points: torch.Tensor, sensor_position: torch.Tensor, sensor_orientation: torch.Tensor, cur_ts, use_travel_dist = True):
         # update the neural point map using new observations
         
         cur_resolution = self.resolution
@@ -287,7 +323,7 @@ class NeuralPoints(nn.Module):
         new_certainty = torch.zeros(new_point_count, device=self.device, dtype=self.dtype, requires_grad=False)
         self.point_certainties = torch.cat((self.point_certainties, new_certainty),0)
         
-        self.reset_local_map(sensor_position, sensor_orientation, cur_ts) # no need to recreate hash
+        self.reset_local_map(sensor_position, sensor_orientation, cur_ts, use_travel_dist = use_travel_dist) # no need to recreate hash
 
     def reset_local_map(self, sensor_position: torch.Tensor, sensor_orientation: torch.Tensor, cur_ts: int, 
                         use_travel_dist: bool = True, diff_ts_local: int = 50):
@@ -592,7 +628,7 @@ class NeuralPoints(nn.Module):
 
         # the slow part
         dists2, idx = self.radius_neighborhood_search(query_points,
-                                                      time_filtering=self.temporal_local_map_on and query_locally)
+                                                      time_filtering=self.temporal_local_map_on and query_locally) #
         
         # [N, K], [N, K]
         # if query globally, we do not have the time filtering

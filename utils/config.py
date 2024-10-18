@@ -516,6 +516,7 @@ class Config:
 
         # pgo
         self.imu_pgo = config_args.get("imu_pgo", False)
+        print('imu_pgo:', self.imu_pgo)
         
         if self.track_on:
             self.pgo_on = config_args.get("pgo", False) # only on if indicated

@@ -120,7 +120,7 @@ class Mapper():
     
     def process_frame(self, point_cloud_torch: torch.tensor,
                       frame_label_torch: torch.tensor, cur_pose_torch: torch.tensor, 
-                      frame_id: int, filter_dynamic: bool = False):
+                      frame_id: int, filter_dynamic: bool = False, use_travel_dist: bool = True):
         
         # points_torch contains both the coordinate and the color (intensity)
         # frame_id is the actually used frame id starting from 0 with no skip, 0, 1, 2, ......
@@ -199,7 +199,7 @@ class Mapper():
         if self.config.prune_map_on: #default off
             if self.neural_points.prune_map(self.config.max_prune_certainty):
                 self.neural_points.recreate_hash(None, None, True, True, frame_id)
-        self.neural_points.update(update_points, frame_origin_torch, frame_orientation_torch, frame_id)
+        self.neural_points.update(update_points, frame_origin_torch, frame_orientation_torch, frame_id, use_travel_dist = use_travel_dist)
         # local map is also updated here
         
         if not self.silence:
