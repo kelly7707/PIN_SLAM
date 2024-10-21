@@ -110,10 +110,11 @@ def load_multiple_sequences(bag_file_path, gt_poses_file, point_cloud_topic, num
 
 
 class PointCloudDataset(Dataset):
-    def __init__(self, sequence_paths, gt_poses_files, point_cloud_topics, num_sequences_per_bag=10):
+    def __init__(self, sequence_paths, gt_poses_files, point_cloud_topics, num_sequences_per_bag=10, cache_dir='data/Pretrain_Data'):
         self.sequences = []  # Store all sequences, but track which bag they came from
         self.sequence_gt_poses = []  
         self.sequence_labels = []  # Keep track of which .bag each sequence came from
+        self.unique_bag_labels = []
         
         # Load multiple sequences from each bag and store them
         for sequence_path, gt_poses_file, point_cloud_topic in zip(sequence_paths, gt_poses_files, point_cloud_topics):
@@ -122,7 +123,13 @@ class PointCloudDataset(Dataset):
             self.sequences.extend(sequences_from_bag)  # Store sequences from the bag
             self.sequence_gt_poses.extend(gt_poses_from_bag)  
             self.sequence_labels.extend([sequence_path] * num_sequences_per_bag)  # Track source of sequences
+            self.unique_bag_labels.append(sequence_path)
         print('--------sequences loaded for all bags')
+        # Get unique sequence labels and save them
+        self.unique_bag_labels = np.array(self.unique_bag_labels)
+        # unique_bag_labels = np.unique(self.unique_bag_labels) #  no need
+        
+        self.save_unique_sequences(self.unique_bag_labels, f'{cache_dir}/unique_labels.pt')
 
     def __len__(self):
         return len(self.sequences)
@@ -130,6 +137,17 @@ class PointCloudDataset(Dataset):
     def __getitem__(self, idx):
         # Return a sequence and the label (the bag it came from)
         return self.sequences[idx], self.sequence_gt_poses[idx], self.sequence_labels[idx]
+
+    def save_unique_sequences(self, unique_bag_labels, label_file):
+        if os.path.exists(label_file):
+            os.remove(label_file)  # Delete the existing file
+            print(f"Existing file {label_file} deleted.")
+        
+        print(f"Saving unique sequence labels to {label_file}")
+        with open(label_file, 'w') as file:
+            for label in unique_bag_labels:
+                file.write(f"{label}\n")
+        print(f"Unique sequences saved to {label_file}")
 
 
 class SingleBagBatchSampler(Sampler):
@@ -140,8 +158,8 @@ class SingleBagBatchSampler(Sampler):
     def __iter__(self):
         # Step 1: Convert for efficient comparison
         sequence_labels_np = np.array(self.dataset.sequence_labels)
-        unique_bag_labels = np.unique(sequence_labels_np)  # Get unique .bag file labels / input
-
+        unique_bag_labels = np.unique(sequence_labels_np)  # TODO Get unique .bag file labels / input # !always returns the unique elements in sorted order
+        
         bag_to_sequences = {}  # Map .bag file labels to list of sequence indices
         
         # Step 2: group indices by bag label
@@ -174,6 +192,60 @@ class SingleBagBatchSampler(Sampler):
         # Total number of batches (each batch is either 1 or 2 sequences from one .bag)
         return len(self.dataset) // self.sequences_per_batch
 
+
+class MultiBagBatchSampler(Sampler):
+    def __init__(self, dataset, num_datasets=4, sequences_per_batch=1):
+        """
+        Sampler for loading multiple sequences from multiple datasets in parallel.
+
+        Args:
+            dataset: The dataset from which to sample.
+            num_datasets: Number of different datasets to sample from in each batch.
+            sequences_per_batch: Number of sequences to sample from each dataset in a batch.
+        """
+        self.dataset = dataset
+        self.num_datasets = num_datasets
+        self.sequences_per_batch = sequences_per_batch
+
+    def __iter__(self):
+        # Step 1: Convert labels for efficient comparison
+        sequence_labels_np = np.array(self.dataset.sequence_labels)
+        # unique_bag_labels_valid = np.unique(sequence_labels_np)  # Get unique .bag file labels (i.e., datasets)
+        unique_bag_labels = self.dataset.unique_bag_labels
+        
+        bag_to_sequences = {}  # Map .bag file labels to a list of sequence indices
+
+        # Step 2: Group indices by bag label (dataset)
+        for label in unique_bag_labels:
+            indices = np.where(sequence_labels_np == label)[0]  # Get indices of all sequences for the current dataset
+            bag_to_sequences[label] = list(indices)
+
+        # Step 3: Create batches by sampling from multiple datasets in parallel
+        while bag_to_sequences:
+            batch_indices = []  # Collect all sequences for the current batch
+            selected_datasets = random.sample(list(bag_to_sequences.keys()), k=self.num_datasets)
+
+            for dataset_label in selected_datasets:
+                sequence_indices = bag_to_sequences[dataset_label]
+
+                # Select `sequences_per_batch` sequences randomly from this dataset
+                selected_sequences = random.sample(sequence_indices, k=self.sequences_per_batch)
+                batch_indices.extend(selected_sequences)
+
+                # Remove the selected sequences from the dataset
+                for idx in selected_sequences:
+                    sequence_indices.remove(idx)
+
+                # If no more sequences in this dataset, remove it from the pool
+                if len(sequence_indices) == 0:
+                    del bag_to_sequences[dataset_label]
+
+            # Ensure that the batch contains sequences from all selected datasets
+            yield batch_indices
+
+    def __len__(self):
+        # Total number of batches (each batch contains sequences from `num_datasets`)
+        return len(self.dataset) // (self.num_datasets * self.sequences_per_batch)
 
 
 # # -- New college dataset

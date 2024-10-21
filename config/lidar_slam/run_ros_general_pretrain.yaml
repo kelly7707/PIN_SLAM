@@ -1,5 +1,5 @@
 setting:
-  name: "test_ros"
+  name: "pretrain_test_ros"
   output_root: "./experiments"
   deskew: True
   source_from_ros: True
@@ -52,8 +52,8 @@ optimizer: # mapper
   iters: 15 #15  # iterations per frame
   batch_size: 10000
 eval:
-  wandb_vis_on: False # log to wandb or not
-  o3d_vis_on: True
+  wandb_vis_on: True # log to wandb or not
+  o3d_vis_on: False
   silence_log: False
   save_map: True
   save_mesh: False

@@ -6,13 +6,14 @@ from model.neural_points import NeuralPoints
 from model.attention import Attention
 from utils.config import Config
 from torch.utils.data import DataLoader, Dataset
+import torch.multiprocessing as mp
 import torch
 import open3d as o3d
 import numpy as np
 import wandb
 from datetime import datetime
 
-from Dataset_Collection import PointCloudDataset, SingleBagBatchSampler
+from Dataset_Collection import PointCloudDataset, SingleBagBatchSampler, MultiBagBatchSampler
 from dataset.slam_dataset import crop_frame
 from dataset.slam_dataset import SLAMDataset as OriginalSLAMDataset
 from utils.mesher import Mesher
@@ -41,16 +42,16 @@ class SLAMDataset(Dataset):
         self.last_odom_tran = np.eye(4)
         self.T_Wl_Lcur = np.eye(4)
 
-        # visual
-        # current frame point cloud (for visualization)
-        self.cur_frame_o3d = o3d.geometry.PointCloud()
-        # current frame bounding box in the world coordinate system
-        self.cur_bbx = o3d.geometry.AxisAlignedBoundingBox()
-        # merged downsampled point cloud (for visualization)
-        self.map_down_o3d = o3d.geometry.PointCloud()
-        # map bounding box in the world coordinate system
-        self.map_bbx = o3d.geometry.AxisAlignedBoundingBox()
-        self.static_mask = None
+        # # visual
+        # # current frame point cloud (for visualization)
+        # self.cur_frame_o3d = o3d.geometry.PointCloud()
+        # # current frame bounding box in the world coordinate system
+        # self.cur_bbx = o3d.geometry.AxisAlignedBoundingBox()
+        # # merged downsampled point cloud (for visualization)
+        # self.map_down_o3d = o3d.geometry.PointCloud()
+        # # map bounding box in the world coordinate system
+        # self.map_bbx = o3d.geometry.AxisAlignedBoundingBox()
+        # self.static_mask = None
 
     def clear(self):
         self.stop_status = False
@@ -64,6 +65,15 @@ class SLAMDataset(Dataset):
         self.last_odom_tran = np.eye(4)
         self.T_Wl_Lcur = np.eye(4)
 
+        # visual
+        # current frame point cloud (for visualization)
+        self.cur_frame_o3d = o3d.geometry.PointCloud()
+        # current frame bounding box in the world coordinate system
+        self.cur_bbx = o3d.geometry.AxisAlignedBoundingBox()
+        # merged downsampled point cloud (for visualization)
+        self.map_down_o3d = o3d.geometry.PointCloud()
+        # map bounding box in the world coordinate system
+        self.map_bbx = o3d.geometry.AxisAlignedBoundingBox()
         self.static_mask = None
     
     def update_o3d_map(self):
@@ -125,7 +135,7 @@ class SLAMDataset(Dataset):
             print("Estimate normal")
             cur_point_cloud_o3d.estimate_normals(max_nn=20)
             cur_point_cloud_o3d.orient_normals_towards_camera_location() # orient normals towards the default origin(0,0,0).
-            self.frame_normal_torch = torch.tensor(cur_point_cloud_o3d.point.normals.numpy(), dtype=dtype, device=device)
+            self.frame_normal_torch = torch.tensor(cur_point_cloud_o3d.point.normals.numpy(), dtype=self.dtype, device=self.device)
 
 
 def pin_slam_visual(config, geo_mlp, o3d_vis, slamdataset, neural_points, mapper, mesher):
@@ -187,112 +197,165 @@ def pin_slam_visual(config, geo_mlp, o3d_vis, slamdataset, neural_points, mapper
     o3d_vis.update(slamdataset.cur_frame_o3d, slamdataset.T_Wl_Lcur, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd)
             
 
-# --------------------------------------------
-config_path = "./config/lidar_slam/run_ros_general_pretrain.yaml"
-config = Config()
-config.load(config_path)
-slamdataset = SLAMDataset(config)
-neural_points = NeuralPoints(config)
-geo_mlp = Attention(config, config.geo_mlp_hidden_dim, config.geo_mlp_level, 1)
-mapper = Mapper(config, slamdataset, neural_points, geo_mlp, None, None)
-mesher = Mesher(config, neural_points, geo_mlp, None, None)
+def train_single_sequence(sequence_pc, sequence_gt_poses, slamdataset, neural_points, mapper, mesher, config, geo_mlp, o3d_vis):
 
-if config.o3d_vis_on:
-    o3d_vis = MapVisualizer(config)
-if config.wandb_vis_on:
-    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")  # begining timestamp
-    run_name = config.name + "_" + ts  # modified to a name that is easier to index
-    run_path = os.path.join(config.output_root, run_name)
-    # set up wandb
-    setup_wandb()
-    wandb.init(project="pin-slam-pretrain", config=vars(config), dir=run_path) # your own worksapce
-    wandb.run.name = "testing |" + run_name
-    # Set a description for the run
-    wandb.run.notes = "katzensee_s+ fields+ nce+ ncm - 4*5s sequences -- 2 sequences per batch"
-# set the random seed
-o3d.utility.random.seed(config.seed)
-torch.manual_seed(config.seed)
-np.random.seed(config.seed) 
+    # reinitialize the neural points
+    slamdataset.clear()
+    neural_points.clear()
+    slamdataset.gt_poses = sequence_gt_poses
 
-device = config.device
-dtype = config.dtype
+    for point_cloud, cur_pose_torch in zip(sequence_pc, sequence_gt_poses):
+        # point_cloud.to(device=device, dtype=dtype) # nope ; point_cloud = point_cloud.to(device=device, dtype=dtype) #yes
+        # cur_pose_torch.to(device=device) # TODO, dtype=dtype ? 
+        slamdataset.dataset_process(point_cloud, cur_pose_torch)
+        neural_points.travel_dist = torch.tensor(np.array(slamdataset.travel_dist), device = config.device, dtype=config.dtype) 
 
-# --------------------------------------------
-# -------------- Dataset Collection ----------
-# New college dataset
-NC_point_cloud_topic = "/os_cloud_node/points"
-nce_bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
-ncm_bag_path = 'data/Newer_College_Dataset/medium/2021-07-01-11-31-35_0-quad-medium.bag'
-nce_gt_pose_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv'
-ncm_gt_pose_file = 'data/Newer_College_Dataset/medium/gt-nc-quad-medium.csv'
+        cur_sem_labels_torch = None
+        mapper.process_frame(slamdataset.cur_point_cloud_torch, cur_sem_labels_torch,
+                                cur_pose_torch.detach().to(device=config.device), slamdataset.processed_frame, use_travel_dist= True) # TODO: ignore 'use_travel_dist' -> neural_points.update 'use_travel_dist' temporarily
+        # --- for the first frame, we need more iterations to do the initialization (warm-up)
+        # cur_iter_num = int(config.iters * config.init_iter_ratio) if first_train else config.iters # 15
+        cur_iter_num = config.iters # 15
+        first_train = False
 
-# ASL
-ASL_point_cloud_topic = "/ouster/points"
-field_bag_path = './data/ASL/field_s/2023-08-09-19-05-05-field_s.bag'
-katzensee_bag_path = 'data/ASL/katzensee/2023-08-21-10-20-22-katzensee_s.bag'
-katzensees_gt_pose_file = 'data/ASL/katzensee/gt-katzensee_s.csv'
-fields_gt_pose_file = 'data/ASL/field_s/gt-field_s.csv'
+        # mapping with fixed poses (every frame)
+        mapper.mapping(cur_iter_num) # TODO: neural_points.query_feature -> radius_neighborhood_search (time_filtering should be true)
 
-# list
-ts_field_name = "t"
-sequence_paths = [f'{field_bag_path}', f'{katzensee_bag_path}', f'{nce_bag_path}', f'{ncm_bag_path}']
-point_cloud_topics = [ASL_point_cloud_topic, ASL_point_cloud_topic, NC_point_cloud_topic, NC_point_cloud_topic]
-gt_poses_files = [fields_gt_pose_file, katzensees_gt_pose_file, nce_gt_pose_file, ncm_gt_pose_file]
+        if config.o3d_vis_on:
+            pin_slam_visual(config, geo_mlp, o3d_vis, slamdataset, neural_points, mapper, mesher)
+
+        if config.wandb_vis_on:
+            wandb_log_content = {'frame': slamdataset.processed_frame}
+            wandb.log(wandb_log_content)
+
+        slamdataset.processed_frame += 1
 
 
-# Create dataset with sequences from all bags
-dataset = PointCloudDataset(sequence_paths, gt_poses_files, point_cloud_topics, num_sequences_per_bag=4) # 8/10
-# Use custom batch sampler for one or two sequences from the same bag per batch
-batch_sampler = SingleBagBatchSampler(dataset, sequences_per_batch=2)
-# Dataloader with custom batch sampler
-dataloader = DataLoader(dataset, batch_sampler=batch_sampler)
+def main():
+    # --------------------------------------------
+    
+    # -------------- Dataset Collection ----------
+    # New college dataset
+    NC_point_cloud_topic = "/os_cloud_node/points"
+    nce_bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
+    ncm_bag_path = 'data/Newer_College_Dataset/medium/2021-07-01-11-31-35_0-quad-medium.bag'
+    nce_gt_pose_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv'
+    ncm_gt_pose_file = 'data/Newer_College_Dataset/medium/gt-nc-quad-medium.csv'
+
+    # ASL
+    ASL_point_cloud_topic = "/ouster/points"
+    field_bag_path = './data/ASL/field_s/2023-08-09-19-05-05-field_s.bag'
+    katzensee_bag_path = 'data/ASL/katzensee/2023-08-21-10-20-22-katzensee_s.bag'
+    katzensees_gt_pose_file = 'data/ASL/katzensee/gt-katzensee_s.csv'
+    fields_gt_pose_file = 'data/ASL/field_s/gt-field_s.csv'
+
+    # Kitti
+    kitti_point_cloud_topic = "/kitti/velo/pointcloud"
+    kitti_bag_path = 'data/kitti_example/sequences/00/bag00.bag'
+
+    # list
+    # ts_field_name = "t"
+    # sequence_paths = [f'{field_bag_path}', f'{katzensee_bag_path}', f'{nce_bag_path}', f'{ncm_bag_path}']
+    # point_cloud_topics = [ASL_point_cloud_topic, ASL_point_cloud_topic, NC_point_cloud_topic, NC_point_cloud_topic]
+    # gt_poses_files = [fields_gt_pose_file, katzensees_gt_pose_file, nce_gt_pose_file, ncm_gt_pose_file]
+    ts_field_name = "t"
+    sequence_paths = [f'{nce_bag_path}', f'{ncm_bag_path}']
+    point_cloud_topics = [NC_point_cloud_topic, NC_point_cloud_topic]
+    gt_poses_files = [nce_gt_pose_file, ncm_gt_pose_file]
 
 
-first_train = True
-for batch in dataloader:
-    """Each batch contains two components:
-        1. Point cloud sequences (list of tensors) 
-        2. Ground truth poses (list of tensors)
-        3. Labels (list of bag file paths)"""
+    # Create dataset with sequences from all bags
+    dataset = PointCloudDataset(sequence_paths, gt_poses_files, point_cloud_topics, num_sequences_per_bag=4) # 8/10
+    num_datasets = dataset.unique_bag_labels.shape[0]
+    # Use custom batch sampler for one or two sequences from the same bag per batch
+    # # batch_sampler = SingleBagBatchSampler(dataset, sequences_per_batch=2)
+    batch_sampler = MultiBagBatchSampler(dataset, num_datasets=num_datasets, sequences_per_batch=1)
+    # Dataloader with custom batch sampler
+    dataloader = DataLoader(dataset, batch_sampler=batch_sampler)
 
-    # Unpacking the batch into sequences and labels
-    sequences_pc, sequences_gt_poses, labels = batch
+    # --------------------------------------------
+    config_path = "./config/lidar_slam/run_ros_general_pretrain.yaml"
+    config = Config()
+    config.load(config_path)
 
-    for i, sequence_pc in enumerate(sequences_pc):
-        print(f"Sequence {i+1} shape: {sequence_pc.shape}")  # torch.Size([N, 3])
-        print(f"Sequence {i+1} gt poses: {sequences_gt_poses[i].shape}")
-        print(f"Label {i+1}: {labels[i]}")  
+    if config.wandb_vis_on:
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")  # begining timestamp
+        run_name = config.name + "_" + ts  # modified to a name that is easier to index
+        run_path = os.path.join(config.output_root, run_name)
+        access = 0o755
+        os.makedirs(run_path, access, exist_ok=True)
+        # set up wandb
+        setup_wandb()
+        wandb.init(project="pin-slam-pretrain", config=vars(config), dir=run_path) # your own worksapce
+        wandb.run.name = "testing0 |" + run_name
+        # Set a description for the run
+        wandb.run.notes = "nce+ ncm - 2*5s sequences -- 2 sequences per batch"
 
-        # reinitialize the neural points
-        slamdataset.clear()
-        neural_points.clear()
-        slamdataset.gt_poses = sequences_gt_poses[i]
+    
+    geo_mlp = Attention(config, config.geo_mlp_hidden_dim, config.geo_mlp_level, 1)
 
-        for point_cloud, cur_pose_torch in zip(sequence_pc, sequences_gt_poses[i]):
-            # point_cloud.to(device=device, dtype=dtype)
-            # cur_pose_torch.to(device=device) # TODO, dtype=dtype ? 
-            slamdataset.dataset_process(point_cloud, cur_pose_torch)
-            neural_points.travel_dist = torch.tensor(np.array(slamdataset.travel_dist), device = config.device, dtype=config.dtype) 
+    neural_points_list = {}
+    slamdataset_list = {}
+    mapper_list = {}
+    mesher_list = {}
+    for i in range(num_datasets):
+        neural_points_list[dataset.unique_bag_labels[i]] = NeuralPoints(config)
+        slamdataset_list[dataset.unique_bag_labels[i]] = SLAMDataset(config)
+        mapper_list[dataset.unique_bag_labels[i]] = Mapper(config, slamdataset_list[dataset.unique_bag_labels[i]], neural_points_list[dataset.unique_bag_labels[i]], geo_mlp, None, None)
+        if config.o3d_vis_on:
+            mesher_list[dataset.unique_bag_labels[i]] = Mesher(config, neural_points_list[dataset.unique_bag_labels[i]], geo_mlp, None, None)
+        else:
+            mesher_list[dataset.unique_bag_labels[i]] = None
 
-            cur_sem_labels_torch = None
-            mapper.process_frame(slamdataset.cur_point_cloud_torch, cur_sem_labels_torch,
-                                    cur_pose_torch.detach().to(device=device), slamdataset.processed_frame, use_travel_dist= True) # TODO: ignore 'use_travel_dist' -> neural_points.update 'use_travel_dist' temporarily
-            # --- for the first frame, we need more iterations to do the initialization (warm-up)
-            # cur_iter_num = int(config.iters * config.init_iter_ratio) if first_train else config.iters # 15
-            cur_iter_num = int(200) if first_train else config.iters # 15
-            first_train = False
-            # mapping with fixed poses (every frame)
-            mapper.mapping(cur_iter_num) # TODO: neural_points.query_feature -> radius_neighborhood_search (time_filtering should be true)
+    if config.o3d_vis_on:
+        o3d_vis = MapVisualizer(config)
+    else: 
+        o3d_vis = None
 
-            if config.o3d_vis_on:
-                pin_slam_visual(config, geo_mlp, o3d_vis, slamdataset, neural_points, mapper, mesher)
+    # set the random seed
+    o3d.utility.random.seed(config.seed)
+    torch.manual_seed(config.seed)
+    np.random.seed(config.seed) 
 
-            if config.wandb_vis_on:
-                wandb_log_content = {'frame': slamdataset.processed_frame}
-                wandb.log(wandb_log_content)
+    device = config.device
+    dtype = config.dtype
 
-            slamdataset.processed_frame += 1
 
-# Save the model
-torch.save(geo_mlp.state_dict(), 'geo_mlp.pth')
-print("Model saved to geo_mlp.pth")
+    # --------------------------------------------
+    first_train = True
+    for batch in dataloader:
+        """Each batch contains sequences from all dataset (one sequence per dataset), train them in parallel.
+        contains three components:
+            1. Point cloud sequences (list of tensors) 
+            2. Ground truth poses (list of tensors)
+            3. Labels (list of bag file paths)"""
+
+        # Unpacking the batch into sequences and labels
+        sequences_pc, sequences_gt_poses, labels = batch
+
+        processes = []
+        i = 0
+        for sequence_pc, sequence_gt_pose, label in zip(sequences_pc, sequences_gt_poses, labels):
+            print(f"Sequence {i+1} shape: {sequence_pc.shape}")  # torch.Size([N, 3])
+            print(f"Sequence {i+1} gt poses: {sequences_gt_poses[i].shape}")
+            print(f"Label {i+1}: {labels[i]}") 
+            i += 1
+
+            p = mp.Process(target=train_single_sequence, args=(sequence_pc, sequence_gt_pose, slamdataset_list[label], neural_points_list[label], mapper_list[label], mesher_list[label], config, geo_mlp, o3d_vis)) 
+            processes.append(p)
+            p.start()
+
+        for p in processes:
+            p.join()
+
+        first_train = False
+            
+
+    # Save the model
+    torch.save(geo_mlp.state_dict(), 'geo_mlp.pth')
+    print("Model saved to geo_mlp.pth")
+
+
+if __name__ == "__main__":
+    mp.set_start_method('spawn')
+    main()
