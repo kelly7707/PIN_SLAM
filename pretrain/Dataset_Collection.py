@@ -151,7 +151,7 @@ class PointCloudDataset(Dataset):
 
 
 class SingleBagBatchSampler(Sampler):
-    def __init__(self, dataset, sequences_per_batch=2):
+    def __init__(self, dataset, sequences_per_batch=1):
         self.dataset = dataset
         self.sequences_per_batch = sequences_per_batch
 
@@ -168,13 +168,13 @@ class SingleBagBatchSampler(Sampler):
             indices = np.where(sequence_labels_np == label)[0]  # Get indices of all sequences for the current bag
             bag_to_sequences[label] = list(indices)
         
-        # Step 3: Create batches by randomly picking 1 or 2 sequences from the same .bag
+        # Step 3: Create batches by randomly picking 1 sequences from the same .bag
         while bag_to_sequences:
             # Randomly select a bag from the available bags
             bag_label = random.choice(list(bag_to_sequences.keys()))
             sequence_indices = bag_to_sequences[bag_label]
             
-            # Select 1 or 2 sequences randomly from this bag
+            # Select 1 sequences randomly from this bag
             batch_indices = random.sample(sequence_indices, k=self.sequences_per_batch)
             
             # Remove the selected sequences from the bag
@@ -189,7 +189,7 @@ class SingleBagBatchSampler(Sampler):
             yield batch_indices
 
     def __len__(self):
-        # Total number of batches (each batch is either 1 or 2 sequences from one .bag)
+        # Total number of batches (each batch contains 1 sequence from one .bag)
         return len(self.dataset) // self.sequences_per_batch
 
 
