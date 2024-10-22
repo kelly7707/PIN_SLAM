@@ -197,8 +197,18 @@ def pin_slam_visual(config, geo_mlp, o3d_vis, slamdataset, neural_points, mapper
     o3d_vis.update(slamdataset.cur_frame_o3d, slamdataset.T_Wl_Lcur, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd)
             
 
-def train_single_sequence(sequence_pc, sequence_gt_poses, slamdataset, neural_points, mapper, mesher, config, geo_mlp, o3d_vis):
+def print_mlp_weights(mlp_decoder):
+    # print("MLP Decoder Weights:")
+    weights = {}
+    for name, param in mlp_decoder.named_parameters():
+        # print(f"{name}: {param.data}")
+        weights[name] = param.data
+    return weights
 
+def train_single_sequence(rank, sequence_pc, sequence_gt_poses, slamdataset, neural_points, mapper, mesher, config, geo_mlp, o3d_vis, wandb_run_id):
+    wandb.init(project="pin-slam-pretrain", id=wandb_run_id, resume="allow", group="train_single_sequence", job_type=f"process_{rank}")
+    wandb.run.name = f"Process-{rank} | {wandb_run_id}"
+    
     # reinitialize the neural points
     slamdataset.clear()
     neural_points.clear()
@@ -219,7 +229,9 @@ def train_single_sequence(sequence_pc, sequence_gt_poses, slamdataset, neural_po
         first_train = False
 
         # mapping with fixed poses (every frame)
+        # print(f'process {rank}----- {slamdataset.processed_frame}----(before train):', print_mlp_weights(geo_mlp)['multihead_attn.out_proj.weight'] )
         mapper.mapping(cur_iter_num) # TODO: neural_points.query_feature -> radius_neighborhood_search (time_filtering should be true)
+        # print(f'process {rank}----- {slamdataset.processed_frame}----(after train):', print_mlp_weights(geo_mlp)['multihead_attn.out_proj.weight'] )
 
         if config.o3d_vis_on:
             pin_slam_visual(config, geo_mlp, o3d_vis, slamdataset, neural_points, mapper, mesher)
@@ -287,25 +299,10 @@ def main():
         # set up wandb
         setup_wandb()
         wandb.init(project="pin-slam-pretrain", config=vars(config), dir=run_path) # your own worksapce
+        wandb_run_id = wandb.run.id
         wandb.run.name = "testing0 |" + run_name
         # Set a description for the run
         wandb.run.notes = "nce+ ncm - 2*5s sequences -- 2 sequences per batch"
-
-    
-    geo_mlp = Attention(config, config.geo_mlp_hidden_dim, config.geo_mlp_level, 1)
-
-    neural_points_list = {}
-    slamdataset_list = {}
-    mapper_list = {}
-    mesher_list = {}
-    for i in range(num_datasets):
-        neural_points_list[dataset.unique_bag_labels[i]] = NeuralPoints(config)
-        slamdataset_list[dataset.unique_bag_labels[i]] = SLAMDataset(config)
-        mapper_list[dataset.unique_bag_labels[i]] = Mapper(config, slamdataset_list[dataset.unique_bag_labels[i]], neural_points_list[dataset.unique_bag_labels[i]], geo_mlp, None, None)
-        if config.o3d_vis_on:
-            mesher_list[dataset.unique_bag_labels[i]] = Mesher(config, neural_points_list[dataset.unique_bag_labels[i]], geo_mlp, None, None)
-        else:
-            mesher_list[dataset.unique_bag_labels[i]] = None
 
     if config.o3d_vis_on:
         o3d_vis = MapVisualizer(config)
@@ -320,9 +317,28 @@ def main():
     device = config.device
     dtype = config.dtype
 
+    # -- model    
+    geo_mlp = Attention(config, config.geo_mlp_hidden_dim, config.geo_mlp_level, 1)
+    geo_mlp.share_memory()
+
+    # -- can also be moved inside train_single_sequence
+    neural_points_list = {}
+    slamdataset_list = {}
+    mapper_list = {}
+    mesher_list = {}
+    for i in range(num_datasets):
+        neural_points_list[dataset.unique_bag_labels[i]] = NeuralPoints(config)
+        slamdataset_list[dataset.unique_bag_labels[i]] = SLAMDataset(config)
+        mapper_list[dataset.unique_bag_labels[i]] = Mapper(config, slamdataset_list[dataset.unique_bag_labels[i]], neural_points_list[dataset.unique_bag_labels[i]], geo_mlp, None, None)
+        if config.o3d_vis_on:
+            mesher_list[dataset.unique_bag_labels[i]] = Mesher(config, neural_points_list[dataset.unique_bag_labels[i]], geo_mlp, None, None)
+        else:
+            mesher_list[dataset.unique_bag_labels[i]] = None
+
 
     # --------------------------------------------
     first_train = True
+    idx_batch = 0
     for batch in dataloader:
         """Each batch contains sequences from all dataset (one sequence per dataset), train them in parallel.
         contains three components:
@@ -334,14 +350,12 @@ def main():
         sequences_pc, sequences_gt_poses, labels = batch
 
         processes = []
-        i = 0
-        for sequence_pc, sequence_gt_pose, label in zip(sequences_pc, sequences_gt_poses, labels):
-            print(f"Sequence {i+1} shape: {sequence_pc.shape}")  # torch.Size([N, 3])
-            print(f"Sequence {i+1} gt poses: {sequences_gt_poses[i].shape}")
-            print(f"Label {i+1}: {labels[i]}") 
-            i += 1
+        for rank, (sequence_pc, sequence_gt_pose, label) in enumerate(zip(sequences_pc, sequences_gt_poses, labels)):
+            print(f"Sequence {rank+1} shape: {sequence_pc.shape}")  # torch.Size([N, 3])
+            print(f"Sequence {rank+1} gt poses: {sequence_gt_pose.shape}")
+            print(f"Label {rank+1}: {label}") 
 
-            p = mp.Process(target=train_single_sequence, args=(sequence_pc, sequence_gt_pose, slamdataset_list[label], neural_points_list[label], mapper_list[label], mesher_list[label], config, geo_mlp, o3d_vis)) 
+            p = mp.Process(target=train_single_sequence, args=(rank, sequence_pc, sequence_gt_pose, slamdataset_list[label], neural_points_list[label], mapper_list[label], mesher_list[label], config, geo_mlp, o3d_vis, wandb_run_id), name=f'Process-{rank}') 
             processes.append(p)
             p.start()
 
@@ -349,7 +363,8 @@ def main():
             p.join()
 
         first_train = False
-            
+        torch.save(geo_mlp.state_dict(), f"mlp_decoder_checkpoint{idx_batch}.pth")  
+        idx_batch += 1  
 
     # Save the model
     torch.save(geo_mlp.state_dict(), 'geo_mlp.pth')
