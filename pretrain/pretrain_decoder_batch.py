@@ -15,15 +15,17 @@ from datetime import datetime
 from torch import optim
 from torch.optim.optimizer import Optimizer
 from tqdm import tqdm
+import yaml
 
 from Dataset_Collection import PointCloudDataset, SingleBagBatchSampler, MultiBagBatchSampler
-from dataset.slam_dataset import crop_frame
+from dataset.slam_dataset import crop_frame, create_homogeneous_transform
 from dataset.slam_dataset import SLAMDataset as OriginalSLAMDataset
 from utils.mesher import Mesher
 from utils.tools import voxel_down_sample_torch, setup_wandb, split_chunks, get_gradient
 from utils.mapper import Mapper
 from utils.visualizer import MapVisualizer
 from utils.loss import *
+
 
 class SLAMDataset(Dataset):
     def __init__(self, config: Config) -> None:
@@ -142,6 +144,7 @@ class SLAMDataset(Dataset):
             self.frame_normal_torch = torch.tensor(cur_point_cloud_o3d.point.normals.numpy(), dtype=self.dtype, device=self.device)
 
 
+
 def pin_slam_visual(config, geo_mlp, o3d_vis, slamdataset, neural_points, mapper, mesher):
      # --- Mesh reconstruction and visualization
 
@@ -161,24 +164,24 @@ def pin_slam_visual(config, geo_mlp, o3d_vis, slamdataset, neural_points, mapper
     # reconstruction by marching cubes
     mesher.ts = slamdataset.processed_frame # deprecated
     cur_mesh = None
-    if config.mesh_freq_frame > 0:
-        if o3d_vis.render_mesh and (slamdataset.processed_frame == 0 or (slamdataset.processed_frame+1) % config.mesh_freq_frame == 0):     #  or frame_id == last_frame         
+    # if config.mesh_freq_frame > 0:
+    #     if o3d_vis.render_mesh and (slamdataset.processed_frame == 0 or (slamdataset.processed_frame+1) % config.mesh_freq_frame == 0):     #  or frame_id == last_frame         
             
-            # update map bbx
-            global_neural_pcd_down = neural_points.get_neural_points_o3d(query_global=True, random_down_ratio=23) # prime number
-            slamdataset.map_bbx = global_neural_pcd_down.get_axis_aligned_bounding_box()
+    #         # update map bbx
+    #         global_neural_pcd_down = neural_points.get_neural_points_o3d(query_global=True, random_down_ratio=23) # prime number
+    #         slamdataset.map_bbx = global_neural_pcd_down.get_axis_aligned_bounding_box()
             
-            mesh_path = None # no need to save the mesh
+    #         mesh_path = None # no need to save the mesh
 
-            # figure out how to do it efficiently
-            if config.mc_local or (not o3d_vis.vis_global): # only build the local mesh
-                # cur_mesh = mesher.recon_aabb_mesh(slamdataset.cur_bbx, o3d_vis.mc_res_m, mesh_path, True, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=o3d_vis.mesh_min_nn)
-                chunks_aabb = split_chunks(global_neural_pcd_down, slamdataset.cur_bbx, o3d_vis.mc_res_m*100) # reconstruct in chunks
-                cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, o3d_vis.mc_res_m, mesh_path, True, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=o3d_vis.mesh_min_nn)    
-            else:
-                aabb = global_neural_pcd_down.get_axis_aligned_bounding_box()
-                chunks_aabb = split_chunks(global_neural_pcd_down, aabb, o3d_vis.mc_res_m*300) # reconstruct in chunks
-                cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, o3d_vis.mc_res_m, mesh_path, False, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=o3d_vis.mesh_min_nn)    
+    #         # figure out how to do it efficiently
+    #         if config.mc_local or (not o3d_vis.vis_global): # only build the local mesh
+    #             # cur_mesh = mesher.recon_aabb_mesh(slamdataset.cur_bbx, o3d_vis.mc_res_m, mesh_path, True, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=o3d_vis.mesh_min_nn)
+    #             chunks_aabb = split_chunks(global_neural_pcd_down, slamdataset.cur_bbx, o3d_vis.mc_res_m*100) # reconstruct in chunks
+    #             cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, o3d_vis.mc_res_m, mesh_path, True, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=o3d_vis.mesh_min_nn)    
+    #         else:
+    #             aabb = global_neural_pcd_down.get_axis_aligned_bounding_box()
+    #             chunks_aabb = split_chunks(global_neural_pcd_down, aabb, o3d_vis.mc_res_m*300) # reconstruct in chunks
+    #             cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, o3d_vis.mc_res_m, mesh_path, False, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=o3d_vis.mesh_min_nn)    
     cur_sdf_slice = None
     if config.sdfslice_freq_frame > 0:
         if o3d_vis.render_sdf and (slamdataset.processed_frame == 0 or (slamdataset.processed_frame+1) % config.sdfslice_freq_frame == 0):
@@ -201,13 +204,14 @@ def pin_slam_visual(config, geo_mlp, o3d_vis, slamdataset, neural_points, mapper
     o3d_vis.update(slamdataset.cur_frame_o3d, slamdataset.T_Wl_Lcur, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd)
             
 
-def print_mlp_weights(mlp_decoder):
-    # print("MLP Decoder Weights:")
+def print_mlp_weights(print_content,mlp_decoder):
+    print(f'{print_content}')
     weights = {}
     for name, param in mlp_decoder.named_parameters():
         # print(f"{name}: {param.data}")
         weights[name] = param.data
-    return weights
+    print(weights[name])
+    # return weights
 
 
 def setup_optimizer_pretrain(config: Config, neural_point_feat = None, mlp_geo_param = None, 
@@ -239,7 +243,7 @@ def setup_optimizer_pretrain(config: Config, neural_point_feat = None, mlp_geo_p
     return opt 
 
 
-def train_multi_sequences(sequences_pc_curframe, sequences_gt_poses_curframe, sequences_gt_poses, labels, slamdataset_list, neural_points_list, mapper_list, mesher_list, config, geo_mlp, o3d_vis):
+def train_multi_sequences(sequences_pc_curframe, sequences_gt_poses_curframe, labels, slamdataset_list, neural_points_list, mapper_list, mesher_list, config, geo_mlp, o3d_vis):
 
     for index in range(len(labels)):
         point_cloud = sequences_pc_curframe[index] # example: torch.Size([131072, 3])
@@ -249,11 +253,6 @@ def train_multi_sequences(sequences_pc_curframe, sequences_gt_poses_curframe, se
         neural_points = neural_points_list[labels[index]]
         mapper = mapper_list[labels[index]]
         mesher = mesher_list[labels[index]]
-
-        # reinitialize the neural points
-        slamdataset.clear()
-        neural_points.clear()
-        slamdataset.gt_poses = sequences_gt_poses[index]
 
         # # point_cloud = point_cloud.to(device=device, dtype=dtype) 
         # # cur_pose_torch.to(device=device) # TODO, dtype=dtype ? 
@@ -274,11 +273,13 @@ def train_multi_sequences(sequences_pc_curframe, sequences_gt_poses_curframe, se
     iter_count = config.iters # 15
     for iter in tqdm(range(iter_count), disable = False):
         geo_mlp.train()
-        geo_mlp_optimizer.zero_grad()
+        # geo_mlp_optimizer.zero_grad()
         # Initialize the accumulated loss for geo_mlp update
         # accumulated_loss = 0.0
 
         for index in range(len(labels)):
+            geo_mlp_optimizer.zero_grad()
+            
             # mapper_list[labels[index]].pretrain_decoder(iter, neural_point_optimizers[index])
             # -- mapping
             cur_mapper = mapper_list[labels[index]]
@@ -383,20 +384,25 @@ def train_multi_sequences(sequences_pc_curframe, sequences_gt_poses_curframe, se
 
         # accumulated_loss_tensor = torch.tensor(accumulated_loss, requires_grad=True)
         # accumulated_loss_tensor.backward()  # Backpropagate accumulated loss for geo_mlp
-        geo_mlp_optimizer.step() 
+            geo_mlp_optimizer.step() 
 
 
     # update the global map
     for index in range(len(labels)):
         neural_points_list[labels[index]].assign_local_to_global() 
+        if config.wandb_vis_on:
+            wandb_log_content = {'frame': slamdataset_list[labels[index]].processed_frame}
+            wandb.log(wandb_log_content)
+
         slamdataset_list[labels[index]].processed_frame += 1
 
-        # if config.o3d_vis_on:
-        #     pin_slam_visual(config, geo_mlp, o3d_vis, slamdataset, neural_points, mapper, mesher)
+        if config.o3d_vis_on:
+            # pin_slam_visual(config, geo_mlp, o3d_vis, slamdataset, neural_points, mapper, mesher)
+            pin_slam_visual(config, geo_mlp, o3d_vis, slamdataset_list[labels[1]], neural_points_list[labels[1]], mapper_list[labels[1]], mesher_list[labels[1]])
 
-        # if config.wandb_vis_on:
-        #     wandb_log_content = {'frame': slamdataset.processed_frame}
-        #     wandb.log(wandb_log_content)
+    # # unique checking
+    # print_mlp_weights('-------geo_mlp weight inside function',geo_mlp)
+    # print_mlp_weights('-------geo_mlp weight inside class',cur_mapper.geo_mlp)
 
 
 def main():
@@ -410,6 +416,16 @@ def main():
     nce_gt_pose_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv'
     ncm_gt_pose_file = 'data/Newer_College_Dataset/medium/gt-nc-quad-medium.csv'
 
+    calib_file_path = 'data/Newer_College_Dataset/os_imu_lidar_transforms.yaml'
+    with open(calib_file_path, 'r') as file:
+        calibration_data = yaml.safe_load(file)
+    os_sensor_to_base_data = calibration_data['os_sensor_to_base']
+    translation_base = np.array(os_sensor_to_base_data['translation'])
+    rotation_base = np.array(os_sensor_to_base_data['rotation'])
+
+    T_GT_L_nc = create_homogeneous_transform(translation_base, rotation_base)
+    T_L_GT_nc = np.linalg.inv(T_GT_L_nc)
+    
     # ASL
     ASL_point_cloud_topic = "/ouster/points"
     field_bag_path = './data/ASL/field_s/2023-08-09-19-05-05-field_s.bag'
@@ -418,7 +434,10 @@ def main():
     fields_gt_pose_file = 'data/ASL/field_s/gt-field_s.csv'
 
     # Kitti
-    kitti_point_cloud_topic = "/kitti/velo/pointcloud"
+    kitti360_point_cloud_topic = "/kitti360/cloud"
+    kitti360_bag_path = 'data/kitti360_example/2013_05_28_drive_0000_synced.bag'
+    kitti360_gt_pose_file = 'data/kitti360_example/2013_05_28_drive_0000_synced_poses.csv'
+
     kitti_bag_path = 'data/kitti_example/sequences/00/bag00.bag'
 
     # list
@@ -426,6 +445,7 @@ def main():
     sequence_paths = [f'{nce_bag_path}', f'{ncm_bag_path}']
     point_cloud_topics = [NC_point_cloud_topic, NC_point_cloud_topic]
     gt_poses_files = [nce_gt_pose_file, ncm_gt_pose_file]
+    gt_poses_trans = [T_GT_L_nc, T_GT_L_nc]
 
     # Create dataset with sequences from all bags
     dataset = PointCloudDataset(sequence_paths, gt_poses_files, point_cloud_topics, num_sequences_per_bag=4) # 8/10
@@ -467,6 +487,9 @@ def main():
     device = config.device
     dtype = config.dtype
 
+    checkpoint_dir = 'pretrained_mlp_checkpoints'
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    
     # -- model    
     geo_mlp = Attention(config, config.geo_mlp_hidden_dim, config.geo_mlp_level, 1)
 
@@ -502,18 +525,46 @@ def main():
         print(sequences_gt_poses.shape) # torch.Size([2, 50, 4, 4])
         print(labels) 
 
+        # -- transform the ground truth poses to the lidar frame
+        for i in range(len(labels)):
+            T_GT_L = gt_poses_trans[i]
+            original_gt_poses = sequences_gt_poses[i]
+            for j in range(sequences_gt_poses[i].shape[0]):
+                sequences_gt_poses[i][j] = sequences_gt_poses[i][j] @ T_GT_L
+
+            # # translation visualization
+            # translations = [pose[:3, 3].numpy() for pose in sequences_gt_poses[i]]
+            # points = np.array(translations)
+            # point_cloud = o3d.geometry.PointCloud()
+            # point_cloud.points = o3d.utility.Vector3dVector(points)
+            # o3d.visualization.draw_geometries([point_cloud])
+
+
+        # -- reinitialize the neural points
+        for index, label in enumerate(labels):
+            slamdataset = slamdataset_list[label]
+            
+            if idx_batch > 0:
+                slamdataset.clear()
+                neural_points_list[label].clear()
+                mapper_list[label] = Mapper(config, slamdataset, neural_points_list[label], geo_mlp, None, None)
+            slamdataset.gt_poses = sequences_gt_poses[index]
+                       
+        # -- train the pc
         for i in range(sequences_pc.shape[1]):
             sequences_pc_curframe = sequences_pc[:, i, :, :]
             sequences_gt_poses_curframe = sequences_gt_poses[:, i, :, :]
 
-            train_multi_sequences(sequences_pc_curframe, sequences_gt_poses_curframe, sequences_gt_poses, labels, slamdataset_list, neural_points_list, mapper_list, mesher_list, config, geo_mlp, o3d_vis)
+            train_multi_sequences(sequences_pc_curframe, sequences_gt_poses_curframe, labels, slamdataset_list, neural_points_list, mapper_list, mesher_list, config, geo_mlp, o3d_vis)
+            # print_mlp_weights('geo_mlp weight outside fun', geo_mlp)
+
 
         # first_train = False
-        torch.save(geo_mlp.state_dict(), f"mlp_decoder_checkpoint{idx_batch}.pth")  
+        torch.save(geo_mlp.state_dict(), os.path.join(checkpoint_dir, f"mlp_decoder_checkpoint{idx_batch}.pth"))  
         idx_batch += 1  
 
     # Save the model
-    torch.save(geo_mlp.state_dict(), 'geo_mlp.pth')
+    torch.save(geo_mlp.state_dict(), os.path.join(checkpoint_dir, 'geo_mlp.pth'))
     print("Model saved to geo_mlp.pth")
 
 

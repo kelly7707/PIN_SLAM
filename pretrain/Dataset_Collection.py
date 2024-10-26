@@ -44,7 +44,7 @@ def load_multiple_sequences(bag_file_path, gt_poses_file, point_cloud_topic, num
         return torch.load(cache_file)  # Load cached sequences
     
 
-    # Step 1: Preload all message timestamps & GT poses
+    # Step 1: Preload GT poses & all message timestamps
     gt_poses = load_tum_poses(gt_poses_file)
 
     timestamps = []
@@ -223,9 +223,10 @@ class MultiBagBatchSampler(Sampler):
         # Step 3: Create batches by sampling from multiple datasets in parallel
         while bag_to_sequences:
             batch_indices = []  # Collect all sequences for the current batch
-            selected_datasets = random.sample(list(bag_to_sequences.keys()), k=self.num_datasets)
+            # selected_datasets = random.sample(list(bag_to_sequences.keys()), k=self.num_datasets)
 
-            for dataset_label in selected_datasets:
+            # for dataset_label in selected_datasets:
+            for dataset_label in unique_bag_labels:
                 sequence_indices = bag_to_sequences[dataset_label]
 
                 # Select `sequences_per_batch` sequences randomly from this dataset
