@@ -31,8 +31,28 @@ def create_homogeneous_transform_torch(translation, rotation):
     T[:3, 3] = torch.tensor(translation, dtype=torch.float64)  # Set the translation vector
     return T
 
+def load_kitti360_poses(file_path):
+    # Read KITTI360 poses in the format: framenum 3*4 matrix
+    poses = []
+    lastrow = np.array([0, 0, 0, 1]).reshape(1, 4)
+    with open(file_path, 'r') as f:
+        reader = csv.reader(f, delimiter=' ')
+        for row in reader:
+            frame_idx = float(row[0])
+            matrix = np.array(row[1:]).reshape(3, 4)
+            poses.append((frame_idx, np.concatenate(matrix, lastrow)))
+    return poses
 
-def load_multiple_sequences(bag_file_path, gt_poses_file, point_cloud_topic, num_sequences=5, num_msgs=50, cache_dir='data/Pretrain_Data'):
+
+def pad_point_clouds( point_clouds, dim=None):
+    if dim is None:
+        max_points = max(p.shape[0] for p in point_clouds)
+    else:
+        max_points = dim
+    padded_point_clouds = [torch.cat([p, torch.full((max_points - p.shape[0], 3), float('nan'))], dim=0) for p in point_clouds]
+    return torch.stack(padded_point_clouds)
+
+def load_multiple_sequences(bag_file_path, gt_poses_file, point_cloud_topic, kitti_gt_trans_topic="/tf", num_sequences=5, num_msgs=50, cache_dir='data/Pretrain_Data'):
     """Extract multiple random, non-overlapping sequences by selecting 50 consecutive point cloud messages."""
     # Ensure cache directory exists
     os.makedirs(cache_dir, exist_ok=True)
@@ -45,12 +65,36 @@ def load_multiple_sequences(bag_file_path, gt_poses_file, point_cloud_topic, num
     
 
     # Step 1: Preload GT poses & all message timestamps
-    gt_poses = load_tum_poses(gt_poses_file)
+    if point_cloud_topic == "/kitti360/cloud":
+        gt_poses = []
+    #     gt_poses = load_kitti360_poses(gt_poses_file)
+    # if point_cloud_topic != "/kitti360/cloud":
+    else:
+        gt_poses = load_tum_poses(gt_poses_file) # TODO: KITTI360 (CHECK how pin-slam do/ official git)
 
     timestamps = []
-    with rosbag.Bag(bag_file_path, 'r') as bag:
-        for _, _, t in bag.read_messages(topics=[point_cloud_topic]):
-            timestamps.append(t)
+    if point_cloud_topic == "/kitti360/cloud":
+        point_coords_all = []
+        gt_poses_homo_all = []
+        with rosbag.Bag(bag_file_path, 'r') as bag:
+            for topic, msg, t in bag.read_messages(topics=[point_cloud_topic, kitti_gt_trans_topic]): 
+                # print(f'Topic: {topic}, Time: {t}')
+                if topic == point_cloud_topic:
+                    points = np.array(list(point_cloud2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True)))
+                    point_coords_all.append(torch.tensor(points, dtype=torch.float32))
+                    timestamps.append(t)
+                elif topic == kitti_gt_trans_topic: #tf_topic:  read gt 
+                    translation = np.array([msg.transforms[0].transform.translation.x, msg.transforms[0].transform.translation.y, msg.transforms[0].transform.translation.z])
+                    rotation = np.array([msg.transforms[0].transform.rotation.x, msg.transforms[0].transform.rotation.y, msg.transforms[0].transform.rotation.z, msg.transforms[0].transform.rotation.w])
+                    gt_poses.append((t.to_sec(), translation, rotation))
+                    gt_poses_homo_all.append(create_homogeneous_transform_torch(translation, rotation))
+            assert len(point_coords_all) == len(gt_poses_homo_all), "Mismatch in lengths of point_coords and poses_current_interval."
+            print('-------- length of point cloud', len(point_coords_all))
+            print('-------- length of gt poses', len(gt_poses))
+    else:
+        with rosbag.Bag(bag_file_path, 'r') as bag:
+            for _, _, t in bag.read_messages(topics=[point_cloud_topic]): 
+                timestamps.append(t)
 
     # Ensure we have enough messages for multiple sequences
     total_messages = len(timestamps)
@@ -81,20 +125,44 @@ def load_multiple_sequences(bag_file_path, gt_poses_file, point_cloud_topic, num
             end_time = timestamps[start_idx + num_msgs - 1]
 
             # Read messages within the selected time interval
-            for topic, msg, t in bag.read_messages(topics=[point_cloud_topic], start_time=start_time, end_time=end_time):
-                points = np.array(list(point_cloud2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True)))
-                point_coords.append(torch.tensor(points, dtype=torch.float32))
+            if point_cloud_topic == "/kitti360/cloud":
+                
+                point_coords = point_coords_all[start_idx:start_idx + num_msgs]
+                poses_current_interval = gt_poses_homo_all[start_idx:start_idx+num_msgs]
+                assert len(point_coords) == len(poses_current_interval), "Mismatch in lengths of point_coords and poses_current_interval."
+                # for topic, msg, t in bag.read_messages(topics=[point_cloud_topic, kitti_gt_trans_topic], start_time=start_time, end_time=end_time):
+                #     # print(f'Topic: {topic}, Message: {msg}, Time: {t}')
+                #     print(f'Topic: {topic}, Time: {t}')
+                #     if topic == point_cloud_topic:
+                #         points = np.array(list(point_cloud2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True)))
+                #         point_coords.append(torch.tensor(points, dtype=torch.float32))
 
-                # Find the closest GT pose for the current timestamp
-                # TODO: more efficient (no need to check all poses, and check for the entire sequence)
-                # TODO: visualize the pc and gt poses
-                closest_pose = min(gt_poses, key=lambda pose: abs(pose[0] - t.to_sec()))
-                T = create_homogeneous_transform_torch(closest_pose[1], closest_pose[2])
-                poses_current_interval.append(T)
+                #     elif topic == kitti_gt_trans_topic: #tf_topic:  read gt 
+                #         translation = np.array([msg.transforms[0].transform.translation.x, msg.transforms[0].transform.translation.y, msg.transforms[0].transform.translation.z])
+                #         rotation = np.array([msg.transforms[0].transform.rotation.x, msg.transforms[0].transform.rotation.y, msg.transforms[0].transform.rotation.z, msg.transforms[0].transform.rotation.w])
+                #         poses_current_interval.append(create_homogeneous_transform_torch(translation, rotation))
+
+            else:
+                for topic, msg, t in bag.read_messages(topics=[point_cloud_topic], start_time=start_time, end_time=end_time):
+                    points = np.array(list(point_cloud2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True)))
+                    point_coords.append(torch.tensor(points, dtype=torch.float32))
+
+                    # Find the closest GT pose for the current timestamp
+                    # TODO: more efficient (no need to check all poses, and check for the entire sequence)
+                    # TODO: visualize the pc and gt poses
+                    closest_pose = min(gt_poses, key=lambda pose: abs(pose[0] - t.to_sec()))
+                    T = create_homogeneous_transform_torch(closest_pose[1], closest_pose[2])
+                    poses_current_interval.append(T)
 
         # Concatenate the point clouds for the current sequence into a tensor
         if point_coords and poses_current_interval:
-            selected_sequences.append(torch.stack(point_coords))  # Stack the point cloud tensors for the entire sequence
+            if point_cloud_topic == "/kitti360/cloud":
+                # max_points = max(p.shape[0] for p in point_coords)
+                # padded_point_coords = [torch.cat([p, torch.full((max_points - p.shape[0], 3), float('nan'))], dim=0) for p in point_coords]
+                # selected_sequences.append(torch.stack(padded_point_coords))  # Stack the point cloud tensors for the entire sequence
+                selected_sequences.append(pad_point_clouds(point_coords))
+            else:
+                selected_sequences.append(torch.stack(point_coords))  # Stack the point cloud tensors for the entire sequence
             selected_poses.append(torch.stack(poses_current_interval))  # Stack poses for the entire sequence
 
         # Final check to ensure lengths are equal
@@ -136,6 +204,10 @@ class PointCloudDataset(Dataset):
     
     def __getitem__(self, idx):
         # Return a sequence and the label (the bag it came from)
+        if self.sequences[idx].shape[1] != 131072: # ouster 128x1024
+            print(f'--------{self.sequence_labels[idx]} ----- point cloud shape: {self.sequences[idx].shape}')
+            self.sequences[idx] = pad_point_clouds(self.sequences[idx], dim=131072)
+            # TODO: maybe need to downsample the point cloud
         return self.sequences[idx], self.sequence_gt_poses[idx], self.sequence_labels[idx]
 
     def save_unique_sequences(self, unique_bag_labels, label_file):

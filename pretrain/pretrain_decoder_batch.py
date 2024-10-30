@@ -21,7 +21,7 @@ from Dataset_Collection import PointCloudDataset, SingleBagBatchSampler, MultiBa
 from dataset.slam_dataset import crop_frame, create_homogeneous_transform
 from dataset.slam_dataset import SLAMDataset as OriginalSLAMDataset
 from utils.mesher import Mesher
-from utils.tools import voxel_down_sample_torch, setup_wandb, split_chunks, get_gradient
+from utils.tools import voxel_down_sample_torch, setup_wandb, split_chunks, get_gradient, readVariable
 from utils.mapper import Mapper
 from utils.visualizer import MapVisualizer
 from utils.loss import *
@@ -247,6 +247,10 @@ def train_multi_sequences(sequences_pc_curframe, sequences_gt_poses_curframe, la
 
     for index in range(len(labels)):
         point_cloud = sequences_pc_curframe[index] # example: torch.Size([131072, 3])
+        # filter nan (padding during points collection, due to the different number of points in each frame)    
+        nan_mask = torch.isnan(point_cloud).any(dim=1)
+        point_cloud = point_cloud[~nan_mask]
+
         cur_pose_torch = sequences_gt_poses_curframe[index]
 
         slamdataset = slamdataset_list[labels[index]]
@@ -435,17 +439,31 @@ def main():
 
     # Kitti
     kitti360_point_cloud_topic = "/kitti360/cloud"
-    kitti360_bag_path = 'data/kitti360_example/2013_05_28_drive_0000_synced.bag'
-    kitti360_gt_pose_file = 'data/kitti360_example/2013_05_28_drive_0000_synced_poses.csv'
+    kitti360_bag_path = 'data/kitti_360/2013_05_28_drive_0000.bag'
+    kitti360_gt_pose_file = 'data/kitti_360/2013_05_28_drive_0000/data_poses/2013_05_28_drive_0000_sync/poses.txt'
+    
+        # calibration: https://www.cvlibs.net/datasets/kitti-360/documentation.php  & https://github.com/autonomousvision/kitti360Scripts/blob/d4d4885102f72ea8d96c9e72e2ff03a8834353a4/kitti360scripts/devkits/commons/loadCalibration.py#L92C1-L100C14 
+    t_imu_cam_file = 'data/kitti_360/2013_05_28_drive_0000/calibration/calib_cam_to_pose.txt'
+    t_velo_cam_file = 'data/kitti_360/2013_05_28_drive_0000/calibration/calib_cam_to_velo.txt'
+    lastrow = np.array([0, 0, 0, 1]).reshape(1, 4)
+    with open(t_imu_cam_file, 'r') as fid:
+        T_IMU_CAM =  np.concatenate((readVariable(fid, 'image_00', 3, 4), lastrow))# 
+    T_Velo_CAM = np.concatenate((np.loadtxt(t_velo_cam_file).reshape(3,4), lastrow)) # image_00
+    T_GT_L_kitti360 = T_IMU_CAM @ np.linalg.inv(T_Velo_CAM) # T_IMU_L 
 
     kitti_bag_path = 'data/kitti_example/sequences/00/bag00.bag'
 
     # list
-    ts_field_name = "t"
-    sequence_paths = [f'{nce_bag_path}', f'{ncm_bag_path}']
-    point_cloud_topics = [NC_point_cloud_topic, NC_point_cloud_topic]
-    gt_poses_files = [nce_gt_pose_file, ncm_gt_pose_file]
-    gt_poses_trans = [T_GT_L_nc, T_GT_L_nc]
+    # ts_field_name = "t"
+    sequence_paths = [f'{ncm_bag_path}', f'{kitti360_bag_path}']
+    point_cloud_topics = [NC_point_cloud_topic, kitti360_point_cloud_topic]
+    gt_poses_files = [ncm_gt_pose_file, kitti360_gt_pose_file]
+    gt_poses_trans = [T_GT_L_nc, T_GT_L_kitti360]
+
+    # sequence_paths = [f'{nce_bag_path}', f'{ncm_bag_path}', f'{kitti360_bag_path}']
+    # point_cloud_topics = [NC_point_cloud_topic, NC_point_cloud_topic, kitti360_point_cloud_topic]
+    # gt_poses_files = [nce_gt_pose_file, ncm_gt_pose_file, kitti360_gt_pose_file]
+    # gt_poses_trans = [T_GT_L_nc, T_GT_L_nc, T_GT_L_kitti360]
 
     # Create dataset with sequences from all bags
     dataset = PointCloudDataset(sequence_paths, gt_poses_files, point_cloud_topics, num_sequences_per_bag=4) # 8/10
@@ -526,11 +544,11 @@ def main():
         print(labels) 
 
         # -- transform the ground truth poses to the lidar frame
-        for i in range(len(labels)):
+        for i in range(len(labels)): 
             T_GT_L = gt_poses_trans[i]
             original_gt_poses = sequences_gt_poses[i]
             for j in range(sequences_gt_poses[i].shape[0]):
-                sequences_gt_poses[i][j] = sequences_gt_poses[i][j] @ T_GT_L
+                sequences_gt_poses[i][j] = sequences_gt_poses[i][j] @ T_GT_L 
 
             # # translation visualization
             # translations = [pose[:3, 3].numpy() for pose in sequences_gt_poses[i]]

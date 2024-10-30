@@ -197,6 +197,7 @@ class Config:
         
         self.freeze_after_frame: int = 40  # 10, if the decoder model is not loaded , it would be trained and freezed after such frame number
 
+        self.mlp_checkpoint_path = None # the path to the pretrained mlp decoder checkpoint
         # loss
         # the main loss type, select from the sample sdf loss ('bce', 'l1', 'l2', 'zhong') 
         self.main_loss_type: str = 'bce'
@@ -453,6 +454,8 @@ class Config:
 
             # VAE
             self.VAE_on = config_args["decoder"].get("VAE_on", False)
+            # pretrain
+            self.mlp_checkpoint_path = config_args["decoder"].get('mlp_checkpoint_path', None)
 
         # TODO, now set to the same as geo mlp, but actually can be different
         self.color_mlp_level = self.geo_mlp_level
