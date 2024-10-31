@@ -222,49 +222,6 @@ class PointCloudDataset(Dataset):
         print(f"Unique sequences saved to {label_file}")
 
 
-class SingleBagBatchSampler(Sampler):
-    def __init__(self, dataset, sequences_per_batch=1):
-        self.dataset = dataset
-        self.sequences_per_batch = sequences_per_batch
-
-    def __iter__(self):
-        # Step 1: Convert for efficient comparison
-        sequence_labels_np = np.array(self.dataset.sequence_labels)
-        unique_bag_labels = np.unique(sequence_labels_np)  # TODO Get unique .bag file labels / input # !always returns the unique elements in sorted order
-        
-        bag_to_sequences = {}  # Map .bag file labels to list of sequence indices
-        
-        # Step 2: group indices by bag label
-        for label in unique_bag_labels:
-            # Find the indices where the label matches
-            indices = np.where(sequence_labels_np == label)[0]  # Get indices of all sequences for the current bag
-            bag_to_sequences[label] = list(indices)
-        
-        # Step 3: Create batches by randomly picking 1 sequences from the same .bag
-        while bag_to_sequences:
-            # Randomly select a bag from the available bags
-            bag_label = random.choice(list(bag_to_sequences.keys()))
-            sequence_indices = bag_to_sequences[bag_label]
-            
-            # Select 1 sequences randomly from this bag
-            batch_indices = random.sample(sequence_indices, k=self.sequences_per_batch)
-            
-            # Remove the selected sequences from the bag
-            for idx in batch_indices:
-                sequence_indices.remove(idx)
-            
-            # If no more sequences in this bag, remove the bag from the pool
-            if len(sequence_indices) == 0:
-                del bag_to_sequences[bag_label]
-            
-            # Yield the indices for this batch
-            yield batch_indices
-
-    def __len__(self):
-        # Total number of batches (each batch contains 1 sequence from one .bag)
-        return len(self.dataset) // self.sequences_per_batch
-
-
 class MultiBagBatchSampler(Sampler):
     def __init__(self, dataset, num_datasets=4, sequences_per_batch=1):
         """
