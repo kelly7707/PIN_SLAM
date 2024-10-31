@@ -165,3 +165,5 @@ experiments/
 utils/test.py
 utils/IMU.py
 np
+wandb/
+pretrained_mlp_checkpoints/
