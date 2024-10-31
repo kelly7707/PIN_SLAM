@@ -17,7 +17,7 @@ from torch.optim.optimizer import Optimizer
 from tqdm import tqdm
 import yaml
 
-from Dataset_Collection import PointCloudDataset, SingleBagBatchSampler, MultiBagBatchSampler
+from Dataset_Collection import PointCloudDataset, MultiBagBatchSampler
 from dataset.slam_dataset import crop_frame, create_homogeneous_transform
 from dataset.slam_dataset import SLAMDataset as OriginalSLAMDataset
 from utils.mesher import Mesher
@@ -417,8 +417,10 @@ def main():
     NC_point_cloud_topic = "/os_cloud_node/points"
     nce_bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
     ncm_bag_path = 'data/Newer_College_Dataset/medium/2021-07-01-11-31-35_0-quad-medium.bag'
+    nc_mine_bag_path = 'data/Newer_College_Dataset/mine_easy/2021-04-12-11-11-33-mine_medium.bag'
     nce_gt_pose_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv'
     ncm_gt_pose_file = 'data/Newer_College_Dataset/medium/gt-nc-quad-medium.csv'
+    nc_mine_gt_pose_file = 'data/Newer_College_Dataset/mine_easy/medium_gt_state_tum_corrected.csv'
 
     calib_file_path = 'data/Newer_College_Dataset/os_imu_lidar_transforms.yaml'
     with open(calib_file_path, 'r') as file:
@@ -455,10 +457,10 @@ def main():
 
     # list
     # ts_field_name = "t"
-    sequence_paths = [f'{ncm_bag_path}', f'{kitti360_bag_path}']
-    point_cloud_topics = [NC_point_cloud_topic, kitti360_point_cloud_topic]
-    gt_poses_files = [ncm_gt_pose_file, kitti360_gt_pose_file]
-    gt_poses_trans = [T_GT_L_nc, T_GT_L_kitti360]
+    sequence_paths = [f'{ncm_bag_path}', f'{kitti360_bag_path}', f'{nc_mine_bag_path}']
+    point_cloud_topics = [NC_point_cloud_topic, kitti360_point_cloud_topic, NC_point_cloud_topic]
+    gt_poses_files = [ncm_gt_pose_file, kitti360_gt_pose_file, nc_mine_gt_pose_file]
+    gt_poses_trans = [T_GT_L_nc, T_GT_L_kitti360, T_GT_L_nc]
 
     # sequence_paths = [f'{nce_bag_path}', f'{ncm_bag_path}', f'{kitti360_bag_path}']
     # point_cloud_topics = [NC_point_cloud_topic, NC_point_cloud_topic, kitti360_point_cloud_topic]

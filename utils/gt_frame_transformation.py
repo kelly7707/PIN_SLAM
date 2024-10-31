@@ -153,7 +153,7 @@ else:
 # ----------- [wrong! esp. gt has only position info] transform gt wrt. base frame to wrt. lidar frame 
 # poses = read_tum_poses(traj_ref_file)
 # ----------- transform estimated poses instead
-traj_est_file = 'experiments/history/pretrained/ncm-kitti360 4-5s/nc_mine-test_ros_2024-10-31_08-40-08/slam_poses__tum.txt'
+traj_est_file = 'experiments/history/pretrained/ncm-kitti360 4-5s/pinslam-nc_mine-test_ros_2024-10-31_10-17-44/slam_poses__tum_correctedts.txt'
 
 output_file = traj_est_file + '_transformed2GT'
 poses = read_tum_poses(traj_est_file)

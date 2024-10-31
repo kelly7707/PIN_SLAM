@@ -106,8 +106,10 @@ import matplotlib.pyplot as plt
 # traj_ref_file = 'data/Newer_College_Dataset/math_easy/gt_math_easy.csv'
 
 # -----------------nc_mine dataset -------------------
-traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/nc_mine-test_ros_2024-10-31_08-40-08/slam_poses__tum.txt'
-traj_ref_file = 'data/Newer_College_Dataset/mine_easy/medium_gt_state_tum.csv'
+# traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/nc_mine-test_ros_2024-10-31_08-40-08/slam_poses__tum.txt'
+traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/pinslam-nc_mine-test_ros_2024-10-31_10-17-44/slam_poses__tum_correctedts.txt'
+
+traj_ref_file = 'data/Newer_College_Dataset/mine_easy/medium_gt_state_tum_corrected.csv'
 # ------------------ evaluate -------------------
 traj_est_file = traj_est_file_origin + '_transformed2GT'
 
@@ -216,8 +218,8 @@ plot_collection.show()
 #         output_file.writelines(new_lines)
 
 # # Example usage
-# file1_path = 'experiments/history/pretrained/ncm-kitti360 4-5s/pinslam- nc_math-test_ros_2024-10-31_07-53-33/slam_poses__tum_correctedts.txt'  # Path to the pin-slam copy file
-# file2_path = 'experiments/history/pretrained/ncm-kitti360 4-5s/nc_math - test_ros_2024-10-30_23-42-41/slam_poses__tum.txt'  # Path to the our file
-# output_file_path = 'experiments/history/pretrained/ncm-kitti360 4-5s/pinslam- nc_math-test_ros_2024-10-31_07-53-33/slam_poses__tum_correctedts.txt'  # Path to the output file where the result will be saved
+# file1_path = 'experiments/history/pretrained/ncm-kitti360 4-5s/pinslam-nc_mine-test_ros_2024-10-31_10-17-44/slam_poses__tum_correctedts.txt'  # Path to the pin-slam copy file
+# file2_path = 'experiments/history/pretrained/ncm-kitti360 4-5s/nc_mine-test_ros_2024-10-31_08-40-08/slam_poses__tum.txt'  # Path to the our file
+# output_file_path = 'experiments/history/pretrained/ncm-kitti360 4-5s/pinslam-nc_mine-test_ros_2024-10-31_10-17-44/slam_poses__tum_correctedts.txt'  # Path to the output file where the result will be saved
 
 # replace_first_column(file1_path, file2_path, output_file_path)
