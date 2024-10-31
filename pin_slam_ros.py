@@ -69,6 +69,9 @@ class PINSLAMer:
         # initialize the mlp decoder
         if self.config.attention_mode:
             self.geo_mlp = Attention(self.config, self.config.geo_mlp_hidden_dim, self.config.geo_mlp_level, 1)
+            if self.config.mlp_checkpoint_path:
+                self.geo_mlp.load_state_dict(torch.load(self.config.mlp_checkpoint_path))
+            
             self.sem_mlp = None
             self.color_mlp = None
         else:
@@ -395,8 +398,14 @@ class PINSLAMer:
         T5 = get_time()
 
         # --- for the first frame, we need more iterations to do the initialization (warm-up)
-        cur_iter_num = int(self.config.iters * self.config.init_iter_ratio) if self.dataset.processed_frame == 0 else self.config.iters # 15
-        # cur_iter_num = 600 if self.dataset.processed_frame == 0 else self.config.iters # 15
+        if self.config.mlp_checkpoint_path:
+            cur_iter_num = self.config.iters
+
+            # cur_iter_num = 150 if self.dataset.processed_frame == 0 else self.config.iters # 15
+        else: 
+            cur_iter_num = int(self.config.iters * self.config.init_iter_ratio) if self.dataset.processed_frame == 0 else self.config.iters # 15
+        
+        
         # # if self.config.adaptive_mode and self.dataset.stop_status:
         # #     cur_iter_num = max(1, cur_iter_num-10)
 
@@ -404,10 +413,18 @@ class PINSLAMer:
         # if self.dataset.processed_frame == self.config.freeze_after_frame: # freeze the decoder after certain frame (default 40)
         #     freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config) # iters of first frame + 15*40
 
-        if self.dataset.processed_frame % 500 == 0: # unfreeze every 200 frames
-            unfreeze_model(self.geo_mlp)
-        if self.dataset.processed_frame % 500 == 50: # freeze after 40 frames
-            freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config)
+        if self.config.mlp_checkpoint_path:
+            # freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config)
+
+            if self.dataset.processed_frame % 500 == 0: # unfreeze every 200 frames
+                unfreeze_model(self.geo_mlp)
+            if self.dataset.processed_frame % 500 == 50: # freeze after 40 frames
+                freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config)
+        else:
+            if self.dataset.processed_frame % 500 == 0: # unfreeze every 200 frames
+                unfreeze_model(self.geo_mlp)
+            if self.dataset.processed_frame % 500 == 50: # freeze after 40 frames
+                freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config)
 
 
         # # conduct local bundle adjustment (with lower frequency)
@@ -905,21 +922,23 @@ if __name__ == "__main__":
 
     config_path = rospy.get_param('~config_path', "./config/lidar_slam/run_ncd_128.yaml")
     
-    # # -- New college dataset
-    # point_cloud_topic = rospy.get_param('~point_cloud_topic', "/os_cloud_node/points")
-    # imu_topic = rospy.get_param('~imu_topic', "/os_cloud_node/imu")
-    # ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
+    # -- New college dataset
+    point_cloud_topic = rospy.get_param('~point_cloud_topic', "/os_cloud_node/points")
+    imu_topic = rospy.get_param('~imu_topic', "/os_cloud_node/imu")
+    ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
 
     # bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
-    # # bag_path = 'data/Newer_College_Dataset/medium/2021-07-01-11-31-35_0-quad-medium.bag'
+    # bag_path = 'data/Newer_College_Dataset/medium/2021-07-01-11-31-35_0-quad-medium.bag'
+    bag_path = 'data/Newer_College_Dataset/math_easy/2021-04-07-13-52-31_1-math-easy.bag'
     
-    # -- ASL
-    point_cloud_topic = rospy.get_param('~point_cloud_topic', "/ouster/points")
-    imu_topic = rospy.get_param('~imu_topic', "/ouster/imu")
-    ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
-    bag_path = 'data/ASL/field_s/2023-08-09-19-05-05-field_s.bag'
+    # # -- ASL
+    # point_cloud_topic = rospy.get_param('~point_cloud_topic', "/ouster/points")
+    # imu_topic = rospy.get_param('~imu_topic', "/ouster/imu")
+    # ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
+    # # bag_path = 'data/ASL/field_s/2023-08-09-19-05-05-field_s.bag'
     # bag_path = 'data/ASL/katzensee/2023-08-21-10-20-22-katzensee_s.bag'
-    
+    # # bag_path = 'data/ASL/runway_s/2023-08-09-18-44-24-runway_s.bag'
+    # # bag_path = 'data/ASL/tunnel_s/2023-08-08-17-12-37-tunnel_s.bag'
     
     # If you would like to directly run the python script without including it in a ROS package
     # python pin_slam_ros_node.py [path_to_your_config_file] [point_cloud_topic]
