@@ -1,5 +1,5 @@
 setting:
-  name: "test_ros"
+  name: "test_pretrain"
   output_root: "./experiments"
   deskew: True
   source_from_ros: True
@@ -29,7 +29,8 @@ training:
 decoder:
   mlp_hidden_dim: 32 #64
   freeze_after_frame: 40 #40
-  mlp_checkpoint_path: "pretrained_mlp_checkpoints/geo_mlp.pth"
+  # mlp_checkpoint_path: "pretrained_mlp_checkpoints/geo_mlp.pth"
+  # # mlp_checkpoint_path: "pretrained_mlp_checkpoints/pretrain_nce_ncm/geo_mlp.pth"
 
   # VAE_on: True # default False
 loss:
@@ -46,7 +47,7 @@ continual:
 tracker:
   source_vox_down_m: 0.8
   iter_n: 50 #50
-  lm_lambda: 1e-3 # 1e-2 work
+  lm_lambda: 1e-3 # 1e-2 work # unique:1e-3
 imu_pgo: True
 # pgo:
 #   map_context: True

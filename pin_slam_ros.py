@@ -414,12 +414,12 @@ class PINSLAMer:
         #     freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config) # iters of first frame + 15*40
 
         if self.config.mlp_checkpoint_path:
-            # freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config)
+            freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config)
 
-            if self.dataset.processed_frame % 500 == 0: # unfreeze every 200 frames
-                unfreeze_model(self.geo_mlp)
-            if self.dataset.processed_frame % 500 == 50: # freeze after 40 frames
-                freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config)
+            # if self.dataset.processed_frame % 500 == 0: # unfreeze every 200 frames
+            #     unfreeze_model(self.geo_mlp)
+            # if self.dataset.processed_frame % 500 == 50: # freeze after 40 frames
+            #     freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config)
         else:
             if self.dataset.processed_frame % 500 == 0: # unfreeze every 200 frames
                 unfreeze_model(self.geo_mlp)
@@ -930,8 +930,11 @@ if __name__ == "__main__":
     # # bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
     # # bag_path = 'data/Newer_College_Dataset/medium/2021-07-01-11-31-35_0-quad-medium.bag'
     # # bag_path = 'data/Newer_College_Dataset/math_easy/2021-04-07-13-52-31_1-math-easy.bag'
-    # bag_path = 'data/Newer_College_Dataset/mine_easy/2021-04-12-11-11-33-mine_medium.bag'
-    
+    # # bag_path = 'data/Newer_College_Dataset/mine_easy/2021-04-12-11-11-33-mine_medium.bag'
+    # # bag_path = 'data/Newer_College_Dataset/park/2021-11-30-17-09-49_0-park.bag'
+    # bag_path = 'data/Newer_College_Dataset/cloister/2021-12-02-10-19-05_1-cloister.bag'
+
+
     # -- ASL
     point_cloud_topic = rospy.get_param('~point_cloud_topic', "/ouster/points")
     imu_topic = rospy.get_param('~imu_topic', "/ouster/imu")
