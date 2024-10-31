@@ -1,5 +1,5 @@
 setting:
-  name: "test_ros"
+  name: "pinslam"
   output_root: "./experiments"
   deskew: True
   source_from_ros: True
