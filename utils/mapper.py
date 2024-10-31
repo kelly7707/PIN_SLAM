@@ -704,6 +704,131 @@ class Mapper():
         # update the global map
         self.neural_points.assign_local_to_global() 
 
+    def pretrain_mapping(self, iter, neural_point_opt): 
+        T00 = get_time()
+        # we do not use the ray rendering loss here for the incremental mapping
+        coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch(global_coord=not self.ba_done_flag) # coord here is in global frame if no ba pose update
+
+        T01 = get_time()
+
+        poses = self.used_poses[ts]
+        origins = poses[:,:3,3]
+
+        if self.require_gradient: #default false
+            coord.requires_grad_(True)
+
+        geo_feature, color_feature, weight_knn, _, certainty = self.neural_points.query_feature(coord, ts, query_color_feature=self.config.color_on) # query feature of neighbors
+        
+        T02 = get_time()
+        # predict the scaled sdf with the feature
+
+        sdf_pred = self.geo_mlp.sdf(geo_feature, coord) # predict the scaled sdf with the feature # [N, K, 1]
+        sdf_pred = sdf_pred.squeeze(1)
+
+        surface_mask = (torch.abs(sdf_label) < self.config.surface_sample_range_m)  # weight > 0
+
+        if self.require_gradient:
+            g = get_gradient(coord, sdf_pred) # to unit m  
+        elif self.config.numerical_grad: # use for mapping # do not use this for the tracking, still analytical grad for tracking   
+            g = self.get_numerical_gradient(coord[::self.config.gradient_decimation], 
+                                            sdf_pred[::self.config.gradient_decimation],
+                                            self.config.voxel_size_m*self.config.num_grad_step_ratio) #  
+
+        T03 = get_time()
+
+ 
+        # calculate the loss   
+        sdf_individual_losses = torch.zeros_like(sdf_label)      
+        eikonal_individual_losses = torch.zeros_like(sdf_label)
+
+        cur_loss = 0.0
+        weight = torch.abs(weight).detach() # weight's sign indicate the sample is around the surface or in the free space
+        if self.config.main_loss_type == 'bce': # [used]
+            sdf_loss, sdf_individual_losses = sdf_bce_loss(sdf_pred, sdf_label, self.sdf_scale, weight, self.config.loss_weight_on) 
+        elif self.config.main_loss_type == 'zhong': # [not used]
+            sdf_loss = sdf_zhong_loss(sdf_pred, sdf_label, None, weight, self.config.loss_weight_on) 
+        elif self.config.main_loss_type == "sdf_l1": # [not used]
+            sdf_loss = sdf_diff_loss(sdf_pred, sdf_label, weight, l2_loss=False)
+        elif self.config.main_loss_type == "sdf_l2": # [not used]
+            sdf_loss = sdf_diff_loss(sdf_pred, sdf_label, weight, l2_loss=True)
+        else:
+            sys.exit("Please choose a valid loss type")
+        cur_loss += sdf_loss
+
+        # # optional consistency regularization loss
+        consistency_loss = 0.0
+
+        # ekional loss
+        eikonal_loss = 0.0
+        if self.config.ekional_loss_on and self.config.weight_e > 0: # MSE with regards to 1  
+            surface_mask_decimated = surface_mask[::self.config.gradient_decimation]
+            # weight_used = (weight.clone())[::self.config.gradient_decimation] # point-wise weight not used
+            if self.config.ekional_add_to == "freespace":
+                g_used = g[~surface_mask_decimated]
+                # weight_used = weight_used[~surface_mask_decimated]
+            elif self.config.ekional_add_to == "surface":
+                g_used = g[surface_mask_decimated]
+                # weight_used = weight_used[surface_mask_decimated]
+            else: # "all"  # both the surface and the freespace, used here # [used]
+                g_used = g
+            
+            eikonal_individual_losses = (g_used.norm(2, dim=-1) - 1.0) ** 2
+            
+            eikonal_loss = eikonal_individual_losses.mean() # both the surface and the freespace
+            cur_loss += self.config.weight_e * eikonal_loss
+        
+        # kl loss
+        if self.config.VAE_on:
+            kl_loss = -0.5 * torch.sum(1 + self.neural_points.geo_variance - self.neural_points.geo_mean.pow(2) - self.neural_points.geo_variance.exp())
+            cur_loss += self.config.weight_kl * kl_loss
+
+        T04 = get_time()
+
+        neural_point_opt.zero_grad(set_to_none=True)
+        cur_loss.backward(retain_graph=True)
+
+        # --- Monitoring gradients
+        # Monitor gradients for geo_mlp
+        count = 0
+        geo_mlp_grads = {}
+        for name, param in self.geo_mlp.named_parameters():
+            if param.grad is not None:
+                count += 1
+                grad_norm = param.grad.norm().item()
+                geo_mlp_grads[f'grad/geo_mlp/{name}'] = grad_norm
+                # assert grad_norm < 10 and grad_norm > 1e-19, f"Gradient norm for {name} is too large or too small"
+            # assert count > 0, "No gradient computed"
+        # Monitor gradients for neural_points
+        neural_points_grads = {}
+        count = 0
+        for name, param in self.neural_points.named_parameters():
+            if param.grad is not None:
+                count += 1
+                grad_norm = param.grad.norm().item()
+                neural_points_grads[f'grad/neural_points/{name}'] = grad_norm
+                # assert grad_norm < 10 and grad_norm > 1e-9, f"Geo_feature Gradient norm for {name} is too large or too small"
+            assert count > 0, "Geo_feature No gradient computed"
+        
+        neural_point_opt.step()
+
+        T05 = get_time()
+
+        self.total_iter += 1
+
+        if self.config.wandb_vis_on:
+            wandb_log_content = {'iter': self.total_iter, 'loss/total_loss': cur_loss, 'loss/sdf_loss': sdf_loss, \
+                                    'loss/eikonal_loss': eikonal_loss, 'loss/consistency_loss': consistency_loss,
+                                    } #, \
+                                    #'loss/sem_loss': sem_loss, 'loss/color_loss': color_loss} 
+            # Combine gradient logs into wandb log content
+            if geo_mlp_grads:
+                wandb_log_content.update(geo_mlp_grads)
+            if neural_points_grads:
+                wandb_log_content.update(neural_points_grads)
+            wandb.log(wandb_log_content)
+     
+
+
     # monitor statistics
     def monitor(self, sdf_pred, sdf_label):
         # --- Calculate and monitor sdf_pred statistics

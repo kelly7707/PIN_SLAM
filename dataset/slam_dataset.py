@@ -710,8 +710,8 @@ class SLAMDataset(Dataset):
             print("Estimate normal")
             cur_point_cloud_o3d.estimate_normals(max_nn=20)
             cur_point_cloud_o3d.orient_normals_towards_camera_location() # orient normals towards the default origin(0,0,0).
-            if self.config.estimate_normal:
-                self.frame_normal_torch = torch.tensor(cur_point_cloud_o3d.point.normals.numpy(), dtype=self.dtype, device=self.config.device)
+            # if self.config.estimate_normal:
+            self.frame_normal_torch = torch.tensor(cur_point_cloud_o3d.point.normals.numpy(), dtype=self.dtype, device=self.config.device)
 
         T4 = get_time()
     

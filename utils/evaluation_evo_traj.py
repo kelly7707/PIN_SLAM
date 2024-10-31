@@ -36,9 +36,13 @@ import matplotlib.pyplot as plt
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/nce-history surface 06-test_ros_2024-09-25_21-03-50/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/!nce- unfreeze50050- history_idx 06 around surface-test_ros_2024-09-26_09-05-52/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/nce- sdf_normal_03- test_ros_2024-10-10_08-12-11/slam_poses__tum.txt'
-traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/nce-sdf_normal_03-based_on_baseline-test_ros_2024-10-10_11-12-50/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/nce-sdf_normal_03-based_on_baseline-test_ros_2024-10-10_11-12-50/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/test_ros_2024-10-26_23-30-10_ nce_basic pretrained/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/test_ros_2024-10-27_11-08-40_nce_basic pretrain_wo warmup/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/test_ros_2024-10-27_15-32-48/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/nce-pretrained ncm_kitti360 - no warmup- freeze_unfreeze 50_500-test_ros_2024-10-30_15-48-04/slam_poses__tum.txt'
 
-traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv' # ground truth in tum format
+# traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv' # ground truth in tum format
 # # traj_ref_file = 'data/Newer_College_Dataset/transformed_gt-nc-quad-easy_TMU.csv'
 
 # # ------------------ new college_medium dataset -------------------
@@ -50,8 +54,9 @@ traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv' # ground tr
 # # -- overfitting testing
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/ncm-unfreeze500-50-test_ros_2024-09-23_17-55-34/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/!ncm- unfreeze50050- history_idx 06 around surface-test_ros_2024-09-26_12-14-17/slam_poses__tum.txt'
+traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/ncm-test_ros_2024-10-30_21-47-25/slam_poses__tum.txt'
 
-# traj_ref_file = 'data/Newer_College_Dataset/medium/gt-nc-quad-medium.csv'
+traj_ref_file = 'data/Newer_College_Dataset/medium/gt-nc-quad-medium.csv'
 # # traj_ref_file = 'data/Newer_College_Dataset/transformed_gt-nc-quad-medium.csv'
 
 
@@ -88,6 +93,8 @@ traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv' # ground tr
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/katzensee-history distance to surface 06-test_ros_2024-09-25_22-56-23/slam_poses__tum.txt' # better 0.3553936312913024
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/! katzesee- unfreeze50050- history_idx 06 around surface-test_ros_2024-09-26_10-37-51/slam_poses__tum.txt' # better 0.3883542329867946 
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/katzensee-sdf_normal_03-test_ros_2024-10-09_23-46-12/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/test_ros_2024-10-30_10-19-09/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/katzensee-no warmup- freeze_unfreeze-test_ros_2024-10-30_14-18-42/slam_poses__tum.txt'
 
 # traj_ref_file = 'data/ASL/katzensee/gt-katzensee_s.csv'
 # # traj_ref_file = 'data/ASL/katzensee/transformed_gt-katzensee_s.csv'

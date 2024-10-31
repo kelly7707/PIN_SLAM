@@ -225,7 +225,7 @@ class DataSampler():
         # all super fast, all together in 0.5 ms
 
         self.count = self.count+1
-        # if self.count % 50 == 1:
+        # if self.count % 100 == 1:
         #     self.visualize_sdf_with_colors(all_sample_points, sdf_label_tensor)
         # self.visualize_sdf_with_threshold_and_color(all_sample_points, sdf_label_tensor, threshold1=0.6, threshold2=0.6)
         # self.visualize_point_cloud(all_sample_points, normal_label_tensor)
