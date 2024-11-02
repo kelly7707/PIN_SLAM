@@ -400,7 +400,6 @@ class PINSLAMer:
         # --- for the first frame, we need more iterations to do the initialization (warm-up)
         if self.config.mlp_checkpoint_path:
             cur_iter_num = self.config.iters
-
             # cur_iter_num = 150 if self.dataset.processed_frame == 0 else self.config.iters # 15
         else: 
             cur_iter_num = int(self.config.iters * self.config.init_iter_ratio) if self.dataset.processed_frame == 0 else self.config.iters # 15
@@ -414,12 +413,12 @@ class PINSLAMer:
         #     freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config) # iters of first frame + 15*40
 
         if self.config.mlp_checkpoint_path:
-            freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config)
+            # freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config)
 
-            # if self.dataset.processed_frame % 500 == 0: # unfreeze every 200 frames
-            #     unfreeze_model(self.geo_mlp)
-            # if self.dataset.processed_frame % 500 == 50: # freeze after 40 frames
-            #     freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config)
+            if self.dataset.processed_frame % 500 == 0: # unfreeze every 200 frames
+                unfreeze_model(self.geo_mlp)
+            if self.dataset.processed_frame % 500 == 50: # freeze after 40 frames
+                freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config)
         else:
             if self.dataset.processed_frame % 500 == 0: # unfreeze every 200 frames
                 unfreeze_model(self.geo_mlp)
@@ -939,12 +938,14 @@ if __name__ == "__main__":
     point_cloud_topic = rospy.get_param('~point_cloud_topic', "/ouster/points")
     imu_topic = rospy.get_param('~imu_topic', "/ouster/imu")
     ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
-    # bag_path = 'data/ASL/field_s/2023-08-09-19-05-05-field_s.bag'
+    bag_path = 'data/ASL/field_s/2023-08-09-19-05-05-field_s.bag'
     # bag_path = 'data/ASL/katzensee/2023-08-21-10-20-22-katzensee_s.bag'
-    bag_path = 'data/ASL/katzensee_d/2023-08-21-10-29-20-katzensee_d.bag'
+    # bag_path = 'data/ASL/katzensee_d/2023-08-21-10-29-20-katzensee_d.bag'
     # bag_path = 'data/ASL/runway_s/2023-08-09-18-44-24-runway_s.bag'
     # bag_path = 'data/ASL/tunnel_s/2023-08-08-17-12-37-tunnel_s.bag'
     
+
+
     # If you would like to directly run the python script without including it in a ROS package
     # python pin_slam_ros_node.py [path_to_your_config_file] [point_cloud_topic]
     print("If you would like to directly run the python script without including it in a ROS package\n\

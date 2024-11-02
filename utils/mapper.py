@@ -496,7 +496,7 @@ class Mapper():
             T00 = get_time()
             # we do not use the ray rendering loss here for the incremental mapping
             coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch(global_coord=not self.ba_done_flag) # coord here is in global frame if no ba pose update
-
+            # coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch(global_coord=False)
             # # self.training_coord = torch.cat((self.training_coord, coord), 0)
             # self.training_coord = coord
 
