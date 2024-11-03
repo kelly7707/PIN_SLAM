@@ -162,3 +162,8 @@ cython_debug/
 data/
 experiments/
 .vscode/
+pretrained_mlp_checkpoints/
+wandb/
+
+IMU.py
+test.py
