@@ -97,15 +97,16 @@ import matplotlib.pyplot as plt
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/katzensee-no warmup- freeze_unfreeze-test_ros_2024-10-30_14-18-42/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s lidar between factor/kaztensee_s-pretrain-between factor - test_pretrain_2024-11-02_12-24-07/slam_poses__tum.txt' # with lidar between factor 5e-3
 # traj_est_file_origin = 'experiments/test_pretrain_2024-11-02_15-01-38/slam_poses__tum.txt' # 5e-3
+traj_est_file_origin = 'experiments/test_pretrain_2024-11-03_13-07-43/slam_poses__tum.txt'
 
-# traj_ref_file = 'data/ASL/katzensee/gt-katzensee_s.csv'
+traj_ref_file = 'data/ASL/katzensee/gt-katzensee_s.csv'
 # # traj_ref_file = 'data/ASL/katzensee/transformed_gt-katzensee_s.csv'
 
 # --------katzensee d ---------------
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/katzensee_d - test_ros_2024-10-31_12-39-34/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/pinslam-katzensee_d - test_ros_2024-10-31_13-43-09/slam_poses__tum_correctedts.txt'
 
-traj_ref_file = 'data/ASL/katzensee_d/gt-katzensee_d.csv'
+# traj_ref_file = 'data/ASL/katzensee_d/gt-katzensee_d.csv'
 # ------------------ nc_math dataset -------------------
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/nc_math - test_ros_2024-10-30_23-42-41/slam_poses__tum.txt' # our pretrain-kitti360 ncm --> no warmup, freeze_unfreeze 50_500
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/pinslam- nc_math-test_ros_2024-10-31_07-53-33/slam_poses__tum_correctedts.txt' # pinslam

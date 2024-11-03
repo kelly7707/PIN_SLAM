@@ -372,7 +372,9 @@ class PINSLAMer:
                 # --- between factor
                 imu_transform = self.dataset.T_I_L @ self.dataset.last_odom_tran @ self.dataset.T_L_I        
                 # self.pgm.add_odometry_factor(self.dataset.processed_frame, self.dataset.processed_frame-1, imu_transform, cov = cur_edge_cov) # T_p<-c   # TODO: check- cur_edge_cov
-                self.pgm.add_pose_prior(self.dataset.processed_frame, np.linalg.inv(self.dataset.T_Wl_Wi) @ self.dataset.pgo_poses[self.dataset.processed_frame] @ self.dataset.T_L_I)
+                if self.dataset.processed_frame > 1:
+                    self.pgm.add_pose_prior(self.dataset.processed_frame-1, np.linalg.inv(self.dataset.T_Wl_Wi) @ self.dataset.pgo_poses[self.dataset.processed_frame-1] @ self.dataset.T_L_I)
+                # self.pgm.add_pose_prior(self.dataset.processed_frame, np.linalg.inv(self.dataset.T_Wl_Wi) @ self.dataset.pgo_poses[self.dataset.processed_frame] @ self.dataset.T_L_I)
                 self.pgm.estimate_drift(self.dataset.travel_dist, self.dataset.processed_frame) # estimate the current drift
 
                 self.pgm.add_combined_IMU_factor(self.dataset.processed_frame, self.dataset.processed_frame-1)
@@ -938,8 +940,8 @@ if __name__ == "__main__":
     point_cloud_topic = rospy.get_param('~point_cloud_topic', "/ouster/points")
     imu_topic = rospy.get_param('~imu_topic', "/ouster/imu")
     ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
-    bag_path = 'data/ASL/field_s/2023-08-09-19-05-05-field_s.bag'
-    # bag_path = 'data/ASL/katzensee/2023-08-21-10-20-22-katzensee_s.bag'
+    # bag_path = 'data/ASL/field_s/2023-08-09-19-05-05-field_s.bag'
+    bag_path = 'data/ASL/katzensee/2023-08-21-10-20-22-katzensee_s.bag'
     # bag_path = 'data/ASL/katzensee_d/2023-08-21-10-29-20-katzensee_d.bag'
     # bag_path = 'data/ASL/runway_s/2023-08-09-18-44-24-runway_s.bag'
     # bag_path = 'data/ASL/tunnel_s/2023-08-08-17-12-37-tunnel_s.bag'
