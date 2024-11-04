@@ -666,30 +666,31 @@ class SLAMDataset(Dataset):
             # TODO: not only for frame_id>0
             # deskewing (motion undistortion) for source point cloud
             if self.config.deskew and not self.lose_track:
-                # self.cur_source_points = deskewing(self.cur_source_points, cur_source_ts, 
-                #                                    torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype)) # T_last<-cur
+                if self.config.deskew_origin:
+                    self.cur_source_points = deskewing(self.cur_source_points, cur_source_ts, 
+                                                    torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype)) # T_last<-cur
                 
-                
-                # IMU-- 3 deskewing
-                T_Wi_Iimu_deskewing = pgm.imu_prediction_poses_curinterval
-                # assert T_Wi_Icur == T_Wi_Iimu_deskewing[-1]
-                # T_Llast_Limu_deskewing = torch.tensor(self.T_L_I, dtype=torch.float32) @ torch.tensor(np.linalg.inv(T_Wi_Ilast), dtype=torch.float32) @ T_Wi_Iimu_deskewing @ torch.tensor(self.T_I_L, dtype=torch.float32)
-                T_Lcur_Limu_deskewing = torch.tensor(np.linalg.inv(T_Wl_Lcur), dtype=torch.float32) @ torch.tensor(self.T_Wl_Wi, dtype=torch.float32) @ T_Wi_Iimu_deskewing @ torch.tensor(self.T_I_L, dtype=torch.float32)
-                # assert np.allclose(T_Lcur_Limu_deskewing[-1].numpy(), np.eye(4))  # the transformed poses of last imu prediction should be equals to Identity
+                else: 
+                    # IMU-- 3 deskewing
+                    T_Wi_Iimu_deskewing = pgm.imu_prediction_poses_curinterval
+                    # assert T_Wi_Icur == T_Wi_Iimu_deskewing[-1]
+                    # T_Llast_Limu_deskewing = torch.tensor(self.T_L_I, dtype=torch.float32) @ torch.tensor(np.linalg.inv(T_Wi_Ilast), dtype=torch.float32) @ T_Wi_Iimu_deskewing @ torch.tensor(self.T_I_L, dtype=torch.float32)
+                    T_Lcur_Limu_deskewing = torch.tensor(np.linalg.inv(T_Wl_Lcur), dtype=torch.float32) @ torch.tensor(self.T_Wl_Wi, dtype=torch.float32) @ T_Wi_Iimu_deskewing @ torch.tensor(self.T_I_L, dtype=torch.float32)
+                    # assert np.allclose(T_Lcur_Limu_deskewing[-1].numpy(), np.eye(4))  # the transformed poses of last imu prediction should be equals to Identity
 
-                if self.config.source_from_ros:
-                    lidar_last_ts = self.lidar_frame_ts['start_ts']
-                    lidar_cur_ts = self.lidar_frame_ts['end_ts']
-                else:
-                    lidar_last_ts = self.ts_pc[frame_id-1]
-                    lidar_cur_ts = self.ts_pc[frame_id]
-                # for registration
-                self.pre_deskewing_points_reg = self.cur_source_points.clone() # downsampled twice, for registration
-                self.cur_source_points = deskewing_IMU(self.cur_source_points, cur_source_ts, self.ts_raw_imu_curinterval[1:], T_Lcur_Limu_deskewing, np.linalg.inv(T_Llast_Lcur), lidar_last_ts, lidar_cur_ts)
-                # test & mapping & final visualization
-                self.pre_deskewing_points = self.cur_point_cloud_torch.clone() # downsampled once 
-                self.cur_point_cloud_torch = deskewing_IMU(self.cur_point_cloud_torch, self.cur_point_ts_torch, self.ts_raw_imu_curinterval[1:], T_Lcur_Limu_deskewing, np.linalg.inv(T_Llast_Lcur), lidar_last_ts, lidar_cur_ts)
-                self.post_deskewing_points = self.cur_point_cloud_torch.clone()
+                    if self.config.source_from_ros:
+                        lidar_last_ts = self.lidar_frame_ts['start_ts']
+                        lidar_cur_ts = self.lidar_frame_ts['end_ts']
+                    else:
+                        lidar_last_ts = self.ts_pc[frame_id-1]
+                        lidar_cur_ts = self.ts_pc[frame_id]
+                    # for registration
+                    self.pre_deskewing_points_reg = self.cur_source_points.clone() # downsampled twice, for registration
+                    self.cur_source_points = deskewing_IMU(self.cur_source_points, cur_source_ts, self.ts_raw_imu_curinterval[1:], T_Lcur_Limu_deskewing, np.linalg.inv(T_Llast_Lcur), lidar_last_ts, lidar_cur_ts)
+                    # test & mapping & final visualization
+                    self.pre_deskewing_points = self.cur_point_cloud_torch.clone() # downsampled once 
+                    self.cur_point_cloud_torch = deskewing_IMU(self.cur_point_cloud_torch, self.cur_point_ts_torch, self.ts_raw_imu_curinterval[1:], T_Lcur_Limu_deskewing, np.linalg.inv(T_Llast_Lcur), lidar_last_ts, lidar_cur_ts)
+                    self.post_deskewing_points = self.cur_point_cloud_torch.clone()
             # print("# Source point for registeration : ", cur_source_torch.shape[0])
     
         T4 = get_time()
@@ -738,10 +739,11 @@ class SLAMDataset(Dataset):
         self.T_Wl_Llast = self.T_Wl_Lcur # update for the next frame
         self.estimated_pose_lidar = self.T_Wl_Lcur
 
+        if self.config.deskew_origin and not self.lose_track:
         # deskewing (motion undistortion using the estimated transformation) for the sampled points for mapping
         # if self.config.deskew and not self.lose_track:
-        #     self.cur_point_cloud_torch = deskewing(self.cur_point_cloud_torch, self.cur_point_ts_torch, 
-        #                                  torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype)) # T_last<-cur
+            self.cur_point_cloud_torch = deskewing(self.cur_point_cloud_torch, self.cur_point_ts_torch, 
+                                         torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype)) # T_last<-cur
         
         if self.lose_track:
             self.consecutive_lose_track_frame += 1

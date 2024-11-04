@@ -54,6 +54,7 @@ class Config:
 
         # motion undistortion
         self.deskew: bool = True #False
+        self.deskew_origin: bool = False
         self.valid_ts_in_points: bool = True
         self.lidar_type_guess: str = "velodyne"
 
@@ -376,6 +377,8 @@ class Config:
                 self.correction_deg = config_args["setting"].get("correct_deg", self.correction_deg)
 
             self.deskew = config_args["setting"].get("deskew", True) #False) # apply motion undistortion or not
+            self.deskew_origin = config_args["setting"].get("deskew_origin", False) # use the constant velocity model to deskew the motion
+            print('deskew_origin', self.deskew_origin)
             self.valid_ts_in_points = config_args["setting"].get("valid_ts", True)
 
         # process
@@ -503,6 +506,7 @@ class Config:
 
         # pgo
         self.imu_pgo = config_args.get("imu_pgo", False)
+        print('imu_pgo', self.imu_pgo)
         
         if self.track_on:
             self.pgo_on = config_args.get("pgo", False) # only on if indicated
