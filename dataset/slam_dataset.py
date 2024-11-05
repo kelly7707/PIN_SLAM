@@ -275,7 +275,7 @@ class SLAMDataset(Dataset):
 
         self.cur_point_cloud_torch = torch.tensor(point_cloud, device=self.device, dtype=self.dtype)
 
-        if self.config.deskew:
+        if self.config.deskew or self.config.deskew_origin:
             self.get_point_ts(point_ts)
            
 
@@ -320,7 +320,7 @@ class SLAMDataset(Dataset):
             self.read_raw_imu(start_index, end_index)
             # frame_id * 10 
 
-        if self.config.deskew:
+        if self.config.deskew or self.config.deskew_origin:
             self.get_point_ts(point_ts)
         
         # print(self.cur_point_ts_torch)
@@ -420,7 +420,7 @@ class SLAMDataset(Dataset):
     
     # point-wise timestamp is now only used for motion undistortion (deskewing)
     def get_point_ts(self, point_ts = None):
-        if self.config.deskew:
+        if self.config.deskew or self.config.deskew_origin:
             if point_ts is not None and self.config.valid_ts_in_points: # ros default
                 self.cur_point_ts_torch = torch.tensor(point_ts, device=self.device, dtype=self.dtype)
             else: # default
@@ -665,7 +665,7 @@ class SLAMDataset(Dataset):
             
             # TODO: not only for frame_id>0
             # deskewing (motion undistortion) for source point cloud
-            if self.config.deskew and not self.lose_track:
+            if (self.config.deskew or self.config.deskew_origin) and not self.lose_track:
                 if self.config.deskew_origin:
                     self.cur_source_points = deskewing(self.cur_source_points, cur_source_ts, 
                                                     torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype)) # T_last<-cur
@@ -902,7 +902,7 @@ class SLAMDataset(Dataset):
             if self.config.kitti_correction_on:
                 self.cur_point_cloud_torch = intrinsic_correct(self.cur_point_cloud_torch, self.config.correction_deg)
 
-            if self.config.deskew and use_frame_id < self.processed_frame-1:
+            if (self.config.deskew or self.config.deskew_origin) and use_frame_id < self.processed_frame-1:
                 if self.config.track_on:
                     tran_in_frame = np.linalg.inv(self.odom_poses[use_frame_id+1]) @ self.odom_poses[use_frame_id]
                 elif self.gt_pose_provided:
