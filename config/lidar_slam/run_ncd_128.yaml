@@ -4,8 +4,8 @@ setting:
   # pc_path: "./data/ncd_128/math_easy/ply"
   # pose_path: "./data/ncd_128/math_easy/poses.txt" 
   # deskew: True
-  deskew_origin: True # *
-  deskew: False # True *
+  deskew_origin: False # *
+  deskew: True # True *
   source_from_ros: True # *
   gpu_id: "1" # *
 

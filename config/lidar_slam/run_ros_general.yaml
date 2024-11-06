@@ -1,8 +1,8 @@
 setting:
   name: "pinslam"
   output_root: "./experiments"
-  deskew_origin: True
-  deskew: False # True
+  deskew_origin: False # True
+  deskew: True # True
   source_from_ros: True
 
   # end_frame: 1e9 # 600
@@ -35,11 +35,11 @@ continual:
 tracker:
   source_vox_down_m: 0.8
   iter_n: 50
-imu_pgo: False # True
-pgo:
-  map_context: True
-  pgo_freq_frame: 30
-  virtual_side_count: 6
+imu_pgo: True # True
+# pgo:
+#   map_context: True
+#   pgo_freq_frame: 30
+#   virtual_side_count: 6
 optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 10000

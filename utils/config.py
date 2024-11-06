@@ -171,7 +171,7 @@ class Config:
         self.reg_dist_div_grad_norm: bool = False # divide the sdf by the sdf gradient's norm for fixing overshoting or not
         self.reg_GM_dist_m: float = 0.5 # 0.3 # default value changed
         self.reg_GM_grad: float = 0.2 # 0.1 # default value changed, the smaller the value, the smaller the weight would be (give even smaller weight to the outliers)
-        self.reg_lm_lambda: float = 1e-4 # 1e-3
+        self.reg_lm_lambda: float = 1e-3 # 1e-4 # 1e-3 **
         self.reg_iter_n: int = 50 # maximum iteration number for registration
         self.reg_term_thre_deg: float = 0.01
         self.reg_term_thre_m: float = 0.0005
@@ -238,7 +238,7 @@ class Config:
 
         # optimizer
         self.mapping_freq_frame: int = 1
-        self.ba_freq_frame: int = 0 # 10
+        self.ba_freq_frame: int = 0 # 10 ** 0
         self.ba_frame: int = 50 # window size for ba
 
         # to have a better reconstruction results, you need to set a larger iters, a smaller lr
@@ -252,7 +252,7 @@ class Config:
         self.adam_eps: float = 1e-15
 
         # loop closure detection
-        self.global_loop_on: bool = False #True # global loop detection using context
+        self.global_loop_on: bool = False #True ** False # global loop detection using context
         self.local_map_context: bool = False # use local map or scan context for loop closure description
         self.loop_with_feature: bool = False # encode neural point feature in the context
         self.min_loop_travel_dist_ratio: float = 4.0 # accumulated travel distance should be larger than theis ratio * local map radius to be considered as an valid candidate
