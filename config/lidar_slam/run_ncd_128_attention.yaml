@@ -1,10 +1,14 @@
 setting:
   name: "test_ncd_128"
   output_root: "./experiments"
-  pc_path: "./data/ncd_128/math_easy/ply"
-  pose_path: "./data/ncd_128/math_easy/poses.txt" 
-  deskew: True
+  # pc_path: "./data/ncd_128/math_easy/ply"
+  # pose_path: "./data/ncd_128/math_easy/poses.txt" 
+  # deskew: True
 
+  # deskew_origin: False # *
+  deskew: True # True *
+  source_from_ros: True # *
+  gpu_id: "1" # *
 
 process:
   min_range_m: 1.5
@@ -13,6 +17,7 @@ process:
   vox_down_m: 0.1
   adaptive_range_on: True
 
+  estimate_normal: True # *
 sampler:
   surface_sample_range_m: 0.35
   surface_sample_n: 3
@@ -25,9 +30,15 @@ neuralpoints:
   query_nn_k: 6
   search_alpha: 0.5
   weighted_first: False
-  use_mid_ts: True
+  # use_mid_ts: True
 
-
+training:
+  attention_mode: True # *
+decoder:
+  mlp_hidden_dim: 32 #64
+  freeze_after_frame: 40 #40
+  mlp_checkpoint_path: "pretrained_mlp_checkpoints/geo_mlp.pth"
+ 
 loss:
   main_loss_type: bce
   sigma_sigmoid_m: 0.1
@@ -38,21 +49,23 @@ loss:
 continual:
   batch_size_new_sample: 1000
   pool_capacity: 1e7
+
 tracker:
   source_vox_down_m: 0.8
   iter_n: 100
 
+imu_pgo: True # True *
 
-pgo:
-  map_context: True
-  pgo_freq_frame: 30
+# pgo:
+#   map_context: True
+#   pgo_freq_frame: 30
 optimizer: # mapper
   iters: 15  # iterations per frame
-  batch_size: 16384
-  ba_freq_frame: 20
+  batch_size: 10000 #16384
+  # ba_freq_frame: 20
 eval:
   wandb_vis_on: True # log to wandb or not
   o3d_vis_on: False # visualize the mapping or not
-  mesh_freq_frame: 50 # reconstruct the mesh every x frames
-  mesh_min_nn: 15
+  # mesh_freq_frame: 50 # reconstruct the mesh every x frames
+  # mesh_min_nn: 15
   save_map: True

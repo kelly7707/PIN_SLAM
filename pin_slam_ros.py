@@ -923,28 +923,28 @@ if __name__ == "__main__":
 
     config_path = rospy.get_param('~config_path', "./config/lidar_slam/run_ncd_128.yaml")
     
-    # # -- New college dataset
-    # point_cloud_topic = rospy.get_param('~point_cloud_topic', "/os_cloud_node/points")
-    # imu_topic = rospy.get_param('~imu_topic', "/os_cloud_node/imu")
-    # ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
+    # -- New college dataset
+    point_cloud_topic = rospy.get_param('~point_cloud_topic', "/os_cloud_node/points")
+    imu_topic = rospy.get_param('~imu_topic', "/os_cloud_node/imu")
+    ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
 
-    # # bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
-    # # bag_path = 'data/Newer_College_Dataset/medium/2021-07-01-11-31-35_0-quad-medium.bag'
-    # # bag_path = 'data/Newer_College_Dataset/math_easy/2021-04-07-13-52-31_1-math-easy.bag'
-    # # bag_path = 'data/Newer_College_Dataset/mine_easy/2021-04-12-11-11-33-mine_medium.bag'
-    # # bag_path = 'data/Newer_College_Dataset/park/2021-11-30-17-09-49_0-park.bag'
+    bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
+    # bag_path = 'data/Newer_College_Dataset/medium/2021-07-01-11-31-35_0-quad-medium.bag'
+    # bag_path = 'data/Newer_College_Dataset/math_easy/2021-04-07-13-52-31_1-math-easy.bag'
+    # bag_path = 'data/Newer_College_Dataset/mine_easy/2021-04-12-11-11-33-mine_medium.bag'
+    # bag_path = 'data/Newer_College_Dataset/park/2021-11-30-17-09-49_0-park.bag'
     # bag_path = 'data/Newer_College_Dataset/cloister/2021-12-02-10-19-05_1-cloister.bag'
 
 
-    # -- ASL
-    point_cloud_topic = rospy.get_param('~point_cloud_topic', "/ouster/points")
-    imu_topic = rospy.get_param('~imu_topic', "/ouster/imu")
-    ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
-    # bag_path = 'data/ASL/field_s/2023-08-09-19-05-05-field_s.bag'
-    bag_path = 'data/ASL/katzensee/2023-08-21-10-20-22-katzensee_s.bag'
-    # bag_path = 'data/ASL/katzensee_d/2023-08-21-10-29-20-katzensee_d.bag'
-    # bag_path = 'data/ASL/runway_s/2023-08-09-18-44-24-runway_s.bag'
-    # bag_path = 'data/ASL/tunnel_s/2023-08-08-17-12-37-tunnel_s.bag'
+    # # -- ASL
+    # point_cloud_topic = rospy.get_param('~point_cloud_topic', "/ouster/points")
+    # imu_topic = rospy.get_param('~imu_topic', "/ouster/imu")
+    # ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
+    # # bag_path = 'data/ASL/field_s/2023-08-09-19-05-05-field_s.bag'
+    # bag_path = 'data/ASL/katzensee/2023-08-21-10-20-22-katzensee_s.bag'
+    # # bag_path = 'data/ASL/katzensee_d/2023-08-21-10-29-20-katzensee_d.bag'
+    # # bag_path = 'data/ASL/runway_s/2023-08-09-18-44-24-runway_s.bag'
+    # # bag_path = 'data/ASL/tunnel_s/2023-08-08-17-12-37-tunnel_s.bag'
     
 
 
