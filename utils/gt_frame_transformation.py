@@ -113,7 +113,7 @@ T_I_L = create_homogeneous_transform(translation_imu, rotation_imu)
 T_L_I = np.linalg.inv(T_I_L)
 
 
-Flag = False # True for New College, False for ASL
+Flag = True # True for New College, False for ASL
 if Flag:
     print('new college')
     calib_file_path = 'data/Newer_College_Dataset/os_imu_lidar_transforms.yaml'
@@ -153,7 +153,7 @@ else:
 # ----------- [wrong! esp. gt has only position info] transform gt wrt. base frame to wrt. lidar frame 
 # poses = read_tum_poses(traj_ref_file)
 # ----------- transform estimated poses instead
-traj_est_file = 'experiments/test_pretrain_2024-11-03_13-07-43/slam_poses__tum.txt'
+traj_est_file = 'experiments/history/final_pre/ours -wo pretrain/nce- wopretrain- nc config - test_ncd_128_2024-11-06_10-59-48/slam_poses__tum.txt'
 
 output_file = traj_est_file + '_transformed2GT'
 poses = read_tum_poses(traj_est_file)

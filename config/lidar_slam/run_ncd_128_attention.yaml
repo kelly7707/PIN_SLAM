@@ -37,7 +37,7 @@ training:
 decoder:
   mlp_hidden_dim: 32 #64
   freeze_after_frame: 40 #40
-  mlp_checkpoint_path: "pretrained_mlp_checkpoints/geo_mlp.pth"
+  # mlp_checkpoint_path: "pretrained_mlp_checkpoints/geo_mlp.pth"
  
 loss:
   main_loss_type: bce

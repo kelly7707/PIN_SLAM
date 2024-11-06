@@ -42,7 +42,11 @@ import matplotlib.pyplot as plt
 # traj_est_file_origin = 'experiments/test_ros_2024-10-27_15-32-48/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/nce-pretrained ncm_kitti360 - no warmup- freeze_unfreeze 50_500-test_ros_2024-10-30_15-48-04/slam_poses__tum.txt'
 
-# traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv' # ground truth in tum format
+# # finalizing
+# traj_est_file_origin = 'experiments/history/final_pre/ours-pretrian/nce- pretrain ncm_kitti230 - nc config - test_ncd_128_2024-11-06_09-03-43/slam_poses__tum.txt'
+traj_est_file_origin = 'experiments/history/final_pre/ours -wo pretrain/nce- wopretrain- nc config - test_ncd_128_2024-11-06_10-59-48/slam_poses__tum.txt'
+
+traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv' # ground truth in tum format
 # # traj_ref_file = 'data/Newer_College_Dataset/transformed_gt-nc-quad-easy_TMU.csv'
 
 # # ------------------ new college_medium dataset -------------------
@@ -97,9 +101,9 @@ import matplotlib.pyplot as plt
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/katzensee-no warmup- freeze_unfreeze-test_ros_2024-10-30_14-18-42/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s lidar between factor/kaztensee_s-pretrain-between factor - test_pretrain_2024-11-02_12-24-07/slam_poses__tum.txt' # with lidar between factor 5e-3
 # traj_est_file_origin = 'experiments/test_pretrain_2024-11-02_15-01-38/slam_poses__tum.txt' # 5e-3
-traj_est_file_origin = 'experiments/test_pretrain_2024-11-03_13-07-43/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/test_pretrain_2024-11-03_13-07-43/slam_poses__tum.txt'
 
-traj_ref_file = 'data/ASL/katzensee/gt-katzensee_s.csv'
+# traj_ref_file = 'data/ASL/katzensee/gt-katzensee_s.csv'
 # # traj_ref_file = 'data/ASL/katzensee/transformed_gt-katzensee_s.csv'
 
 # --------katzensee d ---------------
