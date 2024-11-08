@@ -15,18 +15,18 @@ process:
   min_range_m: 1.5
   max_range_m: 60.0
   min_z_m: -10.0
-  vox_down_m: 0.1
+  vox_down_m: 0.08
   adaptive_range_on: True
 
   estimate_normal: True # *
 sampler:
   surface_sample_range_m: 0.35
-  surface_sample_n: 3
-  free_sample_begin_ratio: 0.3
+  surface_sample_n: 4
+  free_sample_begin_ratio: 0.5
   free_sample_end_dist_m: 1.2
   free_front_sample_n: 2 
 neuralpoints:
-  voxel_size_m: 0.3
+  voxel_size_m: 0.4
   feature_dim: 8 
   query_nn_k: 6
   search_alpha: 0.5
@@ -39,8 +39,8 @@ decoder:
   mlp_hidden_dim: 32 #64
   freeze_after_frame: 40 #40/50
   # mlp_checkpoint_path: "pretrained_mlp_checkpoints/pretrain_ncm_ncminemed/geo_mlp.pth"
-  mlp_checkpoint_path: "pretrained_mlp_checkpoints/pretrain_nce_ncm/geo_mlp.pth"
-  # mlp_checkpoint_path:: "pretrained_mlp_checkpoints/pretrain_ncm_kitti360/geo_mlp.pth"
+  # mlp_checkpoint_path: "pretrained_mlp_checkpoints/pretrain_nce_ncm/geo_mlp.pth"
+  mlp_checkpoint_path: "pretrained_mlp_checkpoints/pretrain_ncm_kitti360/geo_mlp.pth"
 
 loss:
   main_loss_type: bce
@@ -50,11 +50,11 @@ loss:
   ekional_loss_on: True
   weight_e: 0.5
 continual:
-  batch_size_new_sample: 1500 # 1000
+  batch_size_new_sample: 3000 # 1000
   pool_capacity: 2e7 # 1e7
 
 tracker:
-  source_vox_down_m: 0.8
+  source_vox_down_m: 0.6
   iter_n: 100
 
   lm_lambda: 5e-3 # *

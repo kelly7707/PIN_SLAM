@@ -457,10 +457,10 @@ def main():
 
     # list
     # ts_field_name = "t"
-    sequence_paths = [f'{ncm_bag_path}', f'{kitti360_bag_path}', f'{nc_mine_bag_path}']
-    point_cloud_topics = [NC_point_cloud_topic, kitti360_point_cloud_topic, NC_point_cloud_topic]
-    gt_poses_files = [ncm_gt_pose_file, kitti360_gt_pose_file, nc_mine_gt_pose_file]
-    gt_poses_trans = [T_GT_L_nc, T_GT_L_kitti360, T_GT_L_nc]
+    sequence_paths = [f'{ncm_bag_path}', f'{nc_mine_bag_path}']
+    point_cloud_topics = [NC_point_cloud_topic, NC_point_cloud_topic]
+    gt_poses_files = [ncm_gt_pose_file, nc_mine_gt_pose_file]
+    gt_poses_trans = [T_GT_L_nc, T_GT_L_nc]
 
     # sequence_paths = [f'{nce_bag_path}', f'{ncm_bag_path}', f'{kitti360_bag_path}']
     # point_cloud_topics = [NC_point_cloud_topic, NC_point_cloud_topic, kitti360_point_cloud_topic]

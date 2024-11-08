@@ -44,9 +44,9 @@ import matplotlib.pyplot as plt
 
 # # finalizing
 # traj_est_file_origin = 'experiments/history/final_pre/ours-pretrian/nce- pretrain ncm_kitti230 - nc config - test_ncd_128_2024-11-06_09-03-43/slam_poses__tum.txt'
-traj_est_file_origin = 'experiments/history/final_pre/ours -wo pretrain/nce- wopretrain- nc config - test_ncd_128_2024-11-06_10-59-48/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/history/final_pre/ours -wo pretrain/nce- wopretrain- nc config - test_ncd_128_2024-11-06_10-59-48/slam_poses__tum.txt'
 
-traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv' # ground truth in tum format
+# traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv' # ground truth in tum format
 # # traj_ref_file = 'data/Newer_College_Dataset/transformed_gt-nc-quad-easy_TMU.csv'
 
 # # ------------------ new college_medium dataset -------------------
@@ -107,21 +107,44 @@ traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv' # ground tr
 # # traj_ref_file = 'data/ASL/katzensee/transformed_gt-katzensee_s.csv'
 
 # --------katzensee d ---------------
-# traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/katzensee_d - test_ros_2024-10-31_12-39-34/slam_poses__tum.txt'
+traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/katzensee_d - test_ros_2024-10-31_12-39-34/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/pinslam-katzensee_d - test_ros_2024-10-31_13-43-09/slam_poses__tum_correctedts.txt'
 
-# traj_ref_file = 'data/ASL/katzensee_d/gt-katzensee_d.csv'
+traj_ref_file = 'data/ASL/katzensee_d/gt-katzensee_d.csv'
+
+
+## ------------------cloister dataset -------------------
+# traj_est_file_origin = 'experiments/cloister-pretrain_nce_ncm-100_20-5e-3--test_ncd_128_2024-11-06_22-50-18/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/cloister0-wopretrain-300_40-1e-3---test_ros_general_2024-11-07_02-00-48/slam_poses__tum.txt'
+
+# traj_ref_file ='data/Newer_College_Dataset/cloister/gt-nc-cloister.csv'
+
 # ------------------ nc_math dataset -------------------
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/nc_math - test_ros_2024-10-30_23-42-41/slam_poses__tum.txt' # our pretrain-kitti360 ncm --> no warmup, freeze_unfreeze 50_500
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/pinslam- nc_math-test_ros_2024-10-31_07-53-33/slam_poses__tum_correctedts.txt' # pinslam
+# traj_est_file_origin = 'experiments/math_e-wopretrain-300_40-5e-3--test_pretrain_2024-11-07_05-46-52/slam_poses__tum.txt'
 
 # traj_ref_file = 'data/Newer_College_Dataset/math_easy/gt_math_easy.csv'
 
 # -----------------nc_mine dataset -------------------
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/nc_mine-test_ros_2024-10-31_08-40-08/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/pinslam-nc_mine-test_ros_2024-10-31_10-17-44/slam_poses__tum_correctedts.txt'
+# traj_est_file_origin = 'experiments/mine_m-pretrain_ncm_ncminemed-200_20-5e-3---test_ncd_128_2024-11-07_00-39-31/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/mine_m-wopretrain-400_40-5e-3--test_ncd_128_2024-11-07_08-57-22/slam_poses__tum.txt'
 
 # traj_ref_file = 'data/Newer_College_Dataset/mine_easy/medium_gt_state_tum_corrected.csv'
+
+# ---
+# traj_est_file_origin = 'experiments/mine_e-wopretrain-400_40-1e-3---test_ncd_128_2024-11-07_10-59-51/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/mine_easy-wpretrain-test_ncd_128_2024-11-07_12-28-00/slam_poses__tum.txt'
+
+# traj_ref_file = 'data/Newer_College_Dataset/mine_easy/easy_gt_state_tum.csv'
+# # ------------------ nc strairs dataset -------------------
+# traj_est_file_origin = 'experiments/stairs-100_20-pretrain_ncm_ncminemed-5e-3--test_ncd_128_2024-11-06_21-37-21/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/stairs-wopretrain-200_40-5e-3---test_ncd_128_2024-11-07_07-18-19/slam_poses__tum.txt'
+
+# traj_ref_file = 'data/Newer_College_Dataset/stair/gt-nc-stairs.csv'
+
 # ------------------ evaluate -------------------
 traj_est_file = traj_est_file_origin + '_transformed2GT'
 

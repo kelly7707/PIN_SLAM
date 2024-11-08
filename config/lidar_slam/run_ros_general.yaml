@@ -1,5 +1,5 @@
 setting:
-  name: "test_pretrain"
+  name: "test_ros_general"
   output_root: "./experiments"
   deskew: True
   source_from_ros: True
@@ -28,9 +28,10 @@ training:
   attention_mode: True
 decoder:
   mlp_hidden_dim: 32 #64
-  freeze_after_frame: 40 #40
-  mlp_checkpoint_path: "pretrained_mlp_checkpoints/geo_mlp.pth"
-  # # mlp_checkpoint_path: "pretrained_mlp_checkpoints/pretrain_nce_ncm/geo_mlp.pth"
+  freeze_after_frame: 50 #40
+  # mlp_checkpoint_path: "pretrained_mlp_checkpoints/pretrain_ncm_ncminemed/geo_mlp.pth"
+  mlp_checkpoint_path: "pretrained_mlp_checkpoints/pretrain_ncm_kitti360/geo_mlp.pth"
+  # mlp_checkpoint_path: "pretrained_mlp_checkpoints/pretrain_nce_ncm/geo_mlp.pth"
 
   # VAE_on: True # default False
 loss:
@@ -47,7 +48,7 @@ continual:
 tracker:
   source_vox_down_m: 0.8
   iter_n: 50 #50
-  lm_lambda: 1e-3 # 1e-2/5e-3 works sometime # unique:1e-3
+  lm_lambda: 5e-3 # 1e-2/5e-3 works sometime # unique:1e-3
 imu_pgo: True
 # pgo:
 #   map_context: True
