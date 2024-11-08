@@ -684,12 +684,14 @@ if __name__ == "__main__":
     imu_topic = rospy.get_param('~imu_topic', "/os_cloud_node/imu")
     ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
 
-    bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
+    # bag_path = 'data/Newer_College_Dataset/2021-07-01-10-37-38-quad-easy.bag'
     # bag_path = 'data/Newer_College_Dataset/medium/2021-07-01-11-31-35_0-quad-medium.bag'
     # bag_path = 'data/Newer_College_Dataset/math_easy/2021-04-07-13-52-31_1-math-easy.bag'
     # bag_path = 'data/Newer_College_Dataset/mine_easy/2021-04-12-11-11-33-mine_medium.bag'
-    
-
+    # bag_path ='data/Newer_College_Dataset/mine_easy/2021-04-12-11-06-47-easy.bag'
+    # bag_path = 'data/Newer_College_Dataset/stair/2021-07-01-10-40-50_0-stairs.bag'
+    # bag_path = 'data/Newer_College_Dataset/math_easy/nc_math_easy.bag'
+    bag_path = 'data/Newer_College_Dataset/cloister/nc_cloister.bag'
 
     # # -- ASL
     # point_cloud_topic = rospy.get_param('~point_cloud_topic', "/ouster/points")

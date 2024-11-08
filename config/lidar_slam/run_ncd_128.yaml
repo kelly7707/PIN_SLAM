@@ -42,15 +42,15 @@ tracker:
   source_vox_down_m: 0.8
   iter_n: 100
 
-imu_pgo: False # True *
+imu_pgo: True # True *
 
-pgo:
-  map_context: True
-  pgo_freq_frame: 30
+# pgo:
+#   map_context: True
+#   pgo_freq_frame: 30
 optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 16384
-  ba_freq_frame: 20
+  # ba_freq_frame: 20
 eval:
   wandb_vis_on: True # log to wandb or not
   o3d_vis_on: False # visualize the mapping or not
