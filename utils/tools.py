@@ -892,3 +892,7 @@ class VoxelHasherIndex(nn.Module):
         hash = (neighbord_cells * self.primes).sum(-1) % self.buffer_size
         return self.buffer_pt_index[hash]
 
+def remove_gpu_cache():
+    cuda_available = torch.cuda.is_available()
+    if cuda_available:
+        torch.cuda.empty_cache()

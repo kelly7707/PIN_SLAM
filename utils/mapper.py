@@ -341,12 +341,13 @@ class Mapper():
 
         T4 = get_time()
 
-        print("time for dynamic filtering     (ms):", (T1-T0)*1e3)
-        print("time for sampling              (ms):", (T2-T1)*1e3)
-        print("time for map updating          (ms):", (T3-T2)*1e3)
-        print("time for pool updating         (ms):", (T4-T3)*1e3) # mainly spent here
-        print("time for pool transforming     (ms):", (T3_1-T3_0)*1e3) # mainly spent here
-        print("time for filtering             (ms):", (T3_2-T3_1)*1e3)
+        if not self.config.silence:
+            print("time for dynamic filtering     (ms):", (T1-T0)*1e3)
+            print("time for sampling              (ms):", (T2-T1)*1e3)
+            print("time for map updating          (ms):", (T3-T2)*1e3)
+            print("time for pool updating         (ms):", (T4-T3)*1e3) # mainly spent here
+            print("time for pool transforming     (ms):", (T3_1-T3_0)*1e3) # mainly spent here
+            print("time for filtering             (ms):", (T3_2-T3_1)*1e3)
 
     def get_batch(self, global_coord = False):
 

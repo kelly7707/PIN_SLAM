@@ -44,9 +44,9 @@ import matplotlib.pyplot as plt
 
 # # finalizing
 # traj_est_file_origin = 'experiments/history/final_pre/ours-pretrian/nce- pretrain ncm_kitti230 - nc config - test_ncd_128_2024-11-06_09-03-43/slam_poses__tum.txt'
-# traj_est_file_origin = 'experiments/history/final_pre/ours -wo pretrain/nce- wopretrain- nc config - test_ncd_128_2024-11-06_10-59-48/slam_poses__tum.txt'
+traj_est_file_origin = 'experiments/history/final_pre/ours -wo pretrain/nce- wopretrain- nc config - test_ncd_128_2024-11-06_10-59-48/slam_poses__tum.txt'
 
-# traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv' # ground truth in tum format
+traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv' # ground truth in tum format
 # # traj_ref_file = 'data/Newer_College_Dataset/transformed_gt-nc-quad-easy_TMU.csv'
 
 # # ------------------ new college_medium dataset -------------------
@@ -59,6 +59,8 @@ import matplotlib.pyplot as plt
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/ncm-unfreeze500-50-test_ros_2024-09-23_17-55-34/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/tempororily_unique_model/testing/!ncm- unfreeze50050- history_idx 06 around surface-test_ros_2024-09-26_12-14-17/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/ncm-test_ros_2024-10-30_21-47-25/slam_poses__tum.txt'
+
+# traj_est_file_origin = 'experiments/quad_m--pretrain_ncd_ncmath_e_mine_m--200_20--test_ncd_128_2024-11-09_14-19-07/slam_poses__tum.txt'  #
 
 # traj_ref_file = 'data/Newer_College_Dataset/medium/gt-nc-quad-medium.csv'
 # # traj_ref_file = 'data/Newer_College_Dataset/transformed_gt-nc-quad-medium.csv'
@@ -103,45 +105,75 @@ import matplotlib.pyplot as plt
 # traj_est_file_origin = 'experiments/test_pretrain_2024-11-02_15-01-38/slam_poses__tum.txt' # 5e-3
 # traj_est_file_origin = 'experiments/test_pretrain_2024-11-03_13-07-43/slam_poses__tum.txt'
 
+# traj_est_file_origin = '/home/zjw/master_thesis/pin-slam-original/PIN_SLAM/experiments/katzensee_s-ncdm_config-test_ncd_128_middle_rosbag__2024-11-09_16-33-16/slam_poses_tum_correctedts.txt'  #
+
 # traj_ref_file = 'data/ASL/katzensee/gt-katzensee_s.csv'
 # # traj_ref_file = 'data/ASL/katzensee/transformed_gt-katzensee_s.csv'
 
 # --------katzensee d ---------------
-traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/katzensee_d - test_ros_2024-10-31_12-39-34/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/katzensee_d - test_ros_2024-10-31_12-39-34/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/pinslam-katzensee_d - test_ros_2024-10-31_13-43-09/slam_poses__tum_correctedts.txt'
 
-traj_ref_file = 'data/ASL/katzensee_d/gt-katzensee_d.csv'
+# traj_ref_file = 'data/ASL/katzensee_d/gt-katzensee_d.csv'
 
 
 ## ------------------cloister dataset -------------------
-# traj_est_file_origin = 'experiments/cloister-pretrain_nce_ncm-100_20-5e-3--test_ncd_128_2024-11-06_22-50-18/slam_poses__tum.txt'
+# -- cloister0
+# traj_est_file_origin = 'experiments/cloister0-pretrain_nce_ncm-100_20-5e-3--test_ncd_128_2024-11-06_22-50-18/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/cloister0-wopretrain-300_40-1e-3---test_ros_general_2024-11-07_02-00-48/slam_poses__tum.txt'
+
+# -- cloister_all
+# traj_est_file_origin = 
 
 # traj_ref_file ='data/Newer_College_Dataset/cloister/gt-nc-cloister.csv'
 
-# ------------------ nc_math dataset -------------------
+# ------------------ math_easy dataset -------------------
+# --nc_math1
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/nc_math - test_ros_2024-10-30_23-42-41/slam_poses__tum.txt' # our pretrain-kitti360 ncm --> no warmup, freeze_unfreeze 50_500
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/pinslam- nc_math-test_ros_2024-10-31_07-53-33/slam_poses__tum_correctedts.txt' # pinslam
 # traj_est_file_origin = 'experiments/math_e-wopretrain-300_40-5e-3--test_pretrain_2024-11-07_05-46-52/slam_poses__tum.txt'
 
+# -- nc_math_all
+# traj_est_file_origin = 'experiments/math_e_all-pin_imu--ba20--test_ncd_128_2024-11-08_22-36-13/slam_poses__tum_correctedts.txt'  # Path to the output file where the result will be saved
+# traj_est_file_origin = 'experiments/math_e-pretrain_nce_ncm-400_40-test_ncd_128_2024-11-09_10-02-49/slam_poses__tum.txt'  #
+# traj_est_file_origin = 'experiments/math_e-wopretrain-500_50-ba0-test_ncd_128_2024-11-09_08-03-21/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/math_e-pretrain_ncm_ncmm--200_20--3000batch--test_ncd_128_2024-11-09_11-50-25/slam_poses__tum.txt'  #
+
+# traj_est_file_origin = '/home/zjw/master_thesis/pin-slam-original/PIN_SLAM/experiments/math_e--original_pinslam_test_ncd_128_easy_rosbag__2024-11-09_18-15-44/slam_poses_tum_correctedts.txt'  #
+
 # traj_ref_file = 'data/Newer_College_Dataset/math_easy/gt_math_easy.csv'
 
 # -----------------nc_mine dataset -------------------
+# ----medium
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/nc_mine-test_ros_2024-10-31_08-40-08/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/history/pretrained/ncm-kitti360 4-5s/pinslam-nc_mine-test_ros_2024-10-31_10-17-44/slam_poses__tum_correctedts.txt'
 # traj_est_file_origin = 'experiments/mine_m-pretrain_ncm_ncminemed-200_20-5e-3---test_ncd_128_2024-11-07_00-39-31/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/mine_m-wopretrain-400_40-5e-3--test_ncd_128_2024-11-07_08-57-22/slam_poses__tum.txt'
 
+# traj_est_file_origin = '/home/zjw/master_thesis/pin-slam-original/PIN_SLAM/experiments/mine_m--original_pinslam_test_ncd_128_easy_rosbag__2024-11-09_16-00-55/slam_poses_tum_correctedts.txt'  #
+# traj_est_file_origin = '/home/zjw/master_thesis/pin-slam-original/PIN_SLAM/experiments/mine_m--original_pinslam_test_ncd_128_easy_rosbag__2024-11-09_16-00-55/odom_poses_tum_correctedts.txt'
+
 # traj_ref_file = 'data/Newer_College_Dataset/mine_easy/medium_gt_state_tum_corrected.csv'
+# # traj_ref_file = 'data/Newer_College_Dataset/mine_easy/medium_gt_state_tum_corrected.csv'
 
-# ---
+# ---easy
 # traj_est_file_origin = 'experiments/mine_e-wopretrain-400_40-1e-3---test_ncd_128_2024-11-07_10-59-51/slam_poses__tum.txt'
-# traj_est_file_origin = 'experiments/mine_easy-wpretrain-test_ncd_128_2024-11-07_12-28-00/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/mine_easy-wpretrain_maybe_ncm_ncminemed--maybe200_20-test_ncd_128_2024-11-07_12-28-00/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/mine_e-pinslam_imu-ba0-test_ncd_128_2024-11-08_21-08-27/slam_poses__tum_correctedts.txt'  # Path to the output file where the result will be saved
+# traj_est_file_origin = 'experiments/mine_e-pinslamimu-ba20-test_ncd_128_2024-11-08_19-02-51/slam_poses__tum.txt'  #
 
-# traj_ref_file = 'data/Newer_College_Dataset/mine_easy/easy_gt_state_tum.csv'
+# traj_est_file_origin = '/home/zjw/master_thesis/pin-slam-original/PIN_SLAM/experiments/mine_easy_original_pinslam_test_ncd_128_easy_rosbag__2024-11-09_14-11-18/slam_poses_tum_correctedts.txt'  #
+# traj_est_file_origin = '/home/zjw/master_thesis/pin-slam-original/PIN_SLAM/experiments/mine_easy_original_pinslam_test_ncd_128_easy_rosbag__2024-11-09_14-11-18/odom_poses_tum_correctedts.txt'  #
+
+# traj_ref_file = 'data/Newer_College_Dataset/mine_easy/easy_gt_state_tum_corrected.csv'
+# # traj_ref_file = 'data/Newer_College_Dataset/mine_easy/easy_gt_state_tum.csv'
 # # ------------------ nc strairs dataset -------------------
 # traj_est_file_origin = 'experiments/stairs-100_20-pretrain_ncm_ncminemed-5e-3--test_ncd_128_2024-11-06_21-37-21/slam_poses__tum.txt'
 # traj_est_file_origin = 'experiments/stairs-wopretrain-200_40-5e-3---test_ncd_128_2024-11-07_07-18-19/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/stairs-pinsalm_imu-ba0-test_ncd_128_2024-11-08_20-30-35/slam_poses__tum_correctedts.txt'  # Path to the output file where the result will be saved
+
+# traj_est_file_origin = '/home/zjw/master_thesis/pin-slam-original/PIN_SLAM/experiments/stairs--test_ncd_128_small_rosbag__2024-11-09_22-52-48/slam_poses_tum_correctedts.txt'  #
+# traj_est_file_origin = '/home/zjw/master_thesis/pin-slam-original/PIN_SLAM/experiments/stairs--test_ncd_128_small_rosbag__2024-11-09_22-52-48/odom_poses_tum_correctedts.txt'  #
 
 # traj_ref_file = 'data/Newer_College_Dataset/stair/gt-nc-stairs.csv'
 
@@ -227,34 +259,3 @@ plot_collection.show()
 
 
 
-# # ----------------------------------------
-# # correct ts
-
-# def replace_first_column(file1_path, file2_path, output_file_path):
-#     # Read the contents of both files
-#     with open(file1_path, 'r') as file1, open(file2_path, 'r') as file2:
-#         file1_lines = file1.readlines()
-#         file2_lines = file2.readlines()
-
-#     # Replace the first column of file1 with the first column of file2
-#     new_lines = []
-#     for line1, line2 in zip(file1_lines, file2_lines):
-#         line1_values = line1.split()
-#         line2_values = line2.split()
-
-#         # Replace the first value of line1 with the first value of line2
-#         line1_values[0] = line2_values[0]
-
-#         # Reconstruct the line and add to the new lines list
-#         new_lines.append(' '.join(line1_values) + '\n')
-
-#     # Write the modified content to the output file
-#     with open(output_file_path, 'w') as output_file:
-#         output_file.writelines(new_lines)
-
-# # Example usage
-# file1_path = 'experiments/history/pretrained/ncm-kitti360 4-5s/pinslam-katzensee_d - test_ros_2024-10-31_13-43-09/slam_poses__tum_correctedts.txt'  # Path to the pin-slam copy file
-# file2_path = 'experiments/history/pretrained/ncm-kitti360 4-5s/katzensee_d - test_ros_2024-10-31_12-39-34/slam_poses__tum.txt'  # Path to the our file
-# output_file_path = 'experiments/history/pretrained/ncm-kitti360 4-5s/pinslam-katzensee_d - test_ros_2024-10-31_13-43-09/slam_poses__tum_correctedts.txt'  # Path to the output file where the result will be saved
-
-# replace_first_column(file1_path, file2_path, output_file_path)

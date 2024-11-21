@@ -327,6 +327,9 @@ class PINSLAMer:
         
         # I. Load data and preprocessing
         T0 = get_time()
+
+        remove_gpu_cache()
+
         self.dataset.read_frame_ros(lidar_msg, ts_field_name=self.ts_field_name)
 
         if self.dataset.processed_frame == 0:
@@ -424,9 +427,9 @@ class PINSLAMer:
         if self.config.mlp_checkpoint_path:
             # freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config)
 
-            if self.dataset.processed_frame % 100 == 0: # unfreeze every 200 frames
+            if self.dataset.processed_frame % 500 == 0: # unfreeze every 200 frames
                 unfreeze_model(self.geo_mlp)
-            if self.dataset.processed_frame % 100 == 20: # 500/50: # freeze after 40 frames
+            if self.dataset.processed_frame % 500 == 50: # 500/50: # freeze after 40 frames
                 freeze_decoders(self.geo_mlp, self.sem_mlp, self.color_mlp, self.config)
         else:
             if self.dataset.processed_frame % 500 == 0: # unfreeze every 200 frames
@@ -946,15 +949,16 @@ if __name__ == "__main__":
     # # bag_path = 'data/Newer_College_Dataset/stair/2021-07-01-10-40-50_0-stairs.bag'
 
     # bag_path = 'data/Newer_College_Dataset/cloister/nc_cloister.bag'
-    # # bag_path = 'data/Newer_College_Dataset/cloister/2021-12-02-10-19-05_1-cloister.bag'
+    # # # bag_path = 'data/Newer_College_Dataset/cloister/2021-12-02-10-19-05_1-cloister.bag'
+    # # bag_path = 'data/Newer_College_Dataset/math_easy/nc_math_easy.bag'
 
     # -- ASL
     point_cloud_topic = rospy.get_param('~point_cloud_topic', "/ouster/points")
     imu_topic = rospy.get_param('~imu_topic', "/ouster/imu")
     ts_field_name = rospy.get_param('~point_timestamp_field_name', "t")
     # bag_path = 'data/ASL/field_s/2023-08-09-19-05-05-field_s.bag'
-    # bag_path = 'data/ASL/katzensee/2023-08-21-10-20-22-katzensee_s.bag'
-    bag_path = 'data/ASL/katzensee_d/2023-08-21-10-29-20-katzensee_d.bag'
+    bag_path = 'data/ASL/katzensee/2023-08-21-10-20-22-katzensee_s.bag'
+    # bag_path = 'data/ASL/katzensee_d/2023-08-21-10-29-20-katzensee_d.bag'
     # bag_path = 'data/ASL/runway_s/2023-08-09-18-44-24-runway_s.bag'
     # bag_path = 'data/ASL/tunnel_s/2023-08-08-17-12-37-tunnel_s.bag'
     

@@ -977,7 +977,7 @@ def find_closest_timestamp_index(target_timestamp, sorted_timestamps):
     # Use searchsorted to find the insertion point
     idx = np.searchsorted(sorted_timestamps, target_timestamp, side='left')
     if idx == len(sorted_timestamps):
-        print('------- the last imu --------------')
+        # print('------- the last imu --------------')
         if not np.isclose(sorted_timestamps[idx-1].timestamp() * 1e6,target_timestamp.timestamp() * 1e6, atol=0.01):
             print('------- imu wrong here --------------')
     # assert np.isclose(sorted_timestamps[idx].timestamp() * 1e6,target_timestamp.timestamp() * 1e6), 'IMU and LiDAR timestamps are not close'

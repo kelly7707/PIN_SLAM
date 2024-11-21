@@ -1,26 +1,28 @@
 setting:
-  name: "test_ros_general"
+  name: "pretrain_test_ros"
   output_root: "./experiments"
   deskew: True
   source_from_ros: True
 
-  # end_frame: 1e9 # 600
   gpu_id: "1"
+  # pose_path = "True" # should be gt pose file path actually
 process:
-  min_range_m: 2.5
-  max_range_m: 80.0 # maximum distance filter for each frame
+  min_range_m: 1.5
+  max_range_m: 60.0 # maximum distance filter for each frame
+  min_z_m: -10.0
+  vox_down_m: 0.1
   adaptive_range_on: True
 
   estimate_normal: True # default False, sdf estimation in normal direction
 sampler:
-  surface_sample_range_m: 0.3
+  surface_sample_range_m: 0.35
   surface_sample_n: 3
   free_sample_begin_ratio: 0.3
-  free_sample_end_dist_m: 1.0
+  free_sample_end_dist_m: 1.2
   free_front_sample_n: 2
 neuralpoints:
   weighted_first: False
-  voxel_size_m: 0.4 #resolution
+  voxel_size_m: 0.3 #resolution
   feature_dim: 8 # 8 
   query_nn_k: 6 # 6
   search_alpha: 0.5 # increase when you want to be more robust to agressive motions
@@ -28,10 +30,7 @@ training:
   attention_mode: True
 decoder:
   mlp_hidden_dim: 32 #64
-  freeze_after_frame: 50 #40
-  # mlp_checkpoint_path: "pretrained_mlp_checkpoints/pretrain_ncm_ncminemed/geo_mlp.pth"
-  # mlp_checkpoint_path: "pretrained_mlp_checkpoints/pretrain_ncm_kitti360/geo_mlp.pth"
-  # mlp_checkpoint_path: "pretrained_mlp_checkpoints/pretrain_nce_ncm/geo_mlp.pth"
+  freeze_after_frame: 40 #40
 
   # VAE_on: True # default False
 loss:
@@ -42,14 +41,11 @@ loss:
   weight_e: 0.5
   weight_kl: 0.05
 continual:
-  batch_size_new_sample: 1500 # 1500/3000 matters
+  batch_size_new_sample: 1500 # 1500
   pool_capacity: 2e7
-  pool_filter_freq: 10
-tracker:
-  source_vox_down_m: 0.8
-  iter_n: 50 #50
-  lm_lambda: 1e-3 # 1e-2/5e-3 works sometime # unique:1e-3
-imu_pgo: True
+  # pool_filter_freq: 10
+
+imu_pgo: false
 # pgo:
 #   map_context: True
 #   pgo_freq_frame: 30
@@ -58,8 +54,8 @@ optimizer: # mapper
   iters: 15 #15  # iterations per frame
   batch_size: 10000
 eval:
-  wandb_vis_on: False # log to wandb or not
+  wandb_vis_on: True # log to wandb or not
   o3d_vis_on: False
-  silence_log: True
+  silence_log: False
   save_map: True
   save_mesh: False
