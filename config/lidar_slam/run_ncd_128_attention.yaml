@@ -39,9 +39,9 @@ decoder:
   mlp_hidden_dim: 32 #64
   freeze_after_frame: 50 #40/50
   # mlp_checkpoint_path: "pretrained_mlp_checkpoints/ncdpretrain_ncmath_e--ncmine_m/geo_mlp.pth"
-  # mlp_checkpoint_path: "pretrained_mlp_checkpoints/pretrain_ncm_ncminemed/geo_mlp.pth"
+  mlp_checkpoint_path: "pretrained_mlp_checkpoints/pretrain_ncm_ncminemed/geo_mlp.pth"
   # mlp_checkpoint_path: "pretrained_mlp_checkpoints/pretrain_nce_ncm/geo_mlp.pth"
-  mlp_checkpoint_path:: "pretrained_mlp_checkpoints/pretrain_ncm_kitti360/geo_mlp.pth"
+  # mlp_checkpoint_path:: "pretrained_mlp_checkpoints/pretrain_ncm_kitti360/geo_mlp.pth"
 
 loss:
   main_loss_type: bce
@@ -70,7 +70,7 @@ optimizer: # mapper
   batch_size: 10000 #16384
   ## # ba_freq_frame: 20
 eval:
-  wandb_vis_on: True # log to wandb or not
+  wandb_vis_on: False # log to wandb or not
   o3d_vis_on: False # visualize the mapping or not
   # mesh_freq_frame: 50 # reconstruct the mesh every x frames
   # mesh_min_nn: 15

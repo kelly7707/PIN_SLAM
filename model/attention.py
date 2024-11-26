@@ -141,6 +141,7 @@ class Attention(nn.Module):
         # key = self.key_layer(features) #.clone().detach() # features[:,:,-3:]
 
         query = self.query_layer(query_features.clone().detach()).unsqueeze(1)  #.clone().detach()
+        # print("Query shape:", query.shape, "Key shape:", key.shape, "Value shape:", value.shape)
         # query = self.query_layer(zeros_tensor).unsqueeze(1)
         
         # assert (query_features.isnan().any() and features.isnan().any() and value.isnan().any() and key.isnan().any() and query.isnan().any()) == False        
@@ -148,7 +149,7 @@ class Attention(nn.Module):
         
         
         attn_output = self.multihead_attn(query, key, value, need_weights=False) # ignore attn_output_weights
-
+        # print("Attention output shape:", attn_output[0].shape)
         # # Apply LayerNorm after multihead attention
         # attn_output = self.attn_norm(attn_output[0])
         # out = self.lout(attn_output).squeeze(1)

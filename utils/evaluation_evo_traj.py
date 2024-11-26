@@ -44,9 +44,9 @@ import matplotlib.pyplot as plt
 
 # # finalizing
 # traj_est_file_origin = 'experiments/history/final_pre/ours-pretrian/nce- pretrain ncm_kitti230 - nc config - test_ncd_128_2024-11-06_09-03-43/slam_poses__tum.txt'
-traj_est_file_origin = 'experiments/history/final_pre/ours -wo pretrain/nce- wopretrain- nc config - test_ncd_128_2024-11-06_10-59-48/slam_poses__tum.txt'
+# traj_est_file_origin = 'experiments/history/final_pre/ours -wo pretrain/nce- wopretrain- nc config - test_ncd_128_2024-11-06_10-59-48/slam_poses__tum.txt'
 
-traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv' # ground truth in tum format
+# traj_ref_file = 'data/Newer_College_Dataset/gt-nc-quad-easy_TMU.csv' # ground truth in tum format
 # # traj_ref_file = 'data/Newer_College_Dataset/transformed_gt-nc-quad-easy_TMU.csv'
 
 # # ------------------ new college_medium dataset -------------------
