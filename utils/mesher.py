@@ -88,7 +88,7 @@ class Mesher():
         with torch.no_grad(): # eval step
         # with torch.inference_mode():
             for n in tqdm(range(iter_n), disable = self.silence):
-                print('----------mesh debug1---, n=',n)
+                # print('----------mesh debug1---, n=',n)
                 head = n*bs
                 tail = min((n+1)*bs, sample_count)
                 batch_coord = coord[head:tail, :]

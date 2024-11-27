@@ -132,7 +132,7 @@ class SLAMDataset(Dataset):
             cur_point_cloud_o3d.point["positions"] = o3d.core.Tensor(
                 cur_point_cloud_np, o3d_dtype, o3d_device
             )
-            print("Estimate normal")
+            # print("Estimate normal")
             cur_point_cloud_o3d.estimate_normals(max_nn=20)
             cur_point_cloud_o3d.orient_normals_towards_camera_location() # orient normals towards the default origin(0,0,0).
             self.frame_normal_torch = torch.tensor(cur_point_cloud_o3d.point.normals.numpy(), dtype=self.dtype, device=self.device)

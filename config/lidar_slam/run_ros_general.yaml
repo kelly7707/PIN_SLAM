@@ -60,6 +60,6 @@ optimizer: # mapper
 eval:
   wandb_vis_on: False # log to wandb or not
   o3d_vis_on: False
-  silence_log: True
+  silence_log: False
   save_map: True
-  save_mesh: False
+  save_mesh: True
